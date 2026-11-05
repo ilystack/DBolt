@@ -66,7 +66,7 @@
       }
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNBNjI0Qzg3RDA1NDkxMkUKUldRdWtWVFFoMHhpT2dnTkdLcTFpV1Bzc0xqT053TEphclRwQnRTNE01RU45bUFodFI4R2FyaE0K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUwNEU5ODM2RDI2RTg1QkYKUldTL2hXN1NOcGhPNEtEeVBSQXJUa1VVLy8zNmtXK2pYZGNvWGc3Q0pQNVpzL25CN3RmU3NmS08K",
       "endpoints": [
         "https://github.com/ilystack/DBolt/releases/latest/download/latest.json"
       ]

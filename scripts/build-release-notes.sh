@@ -2,7 +2,7 @@
 
 # Compose the GitHub release body from CHANGELOG.md + git metadata.
 #
-# Presentation conventions (shared shape across geek-fun repos):
+# Presentation conventions:
 #   - Changelog sections get emoji headings (### Added -> ### ✨ Added)
 #   - "(#N)" references are linkified to the originating GitHub PR
 #   - Contributors section is omitted when only one author contributed

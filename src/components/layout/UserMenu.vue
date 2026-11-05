@@ -1,64 +1,11 @@
 <script setup lang="ts">
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { Loader2, LogOut, RefreshCw, Settings, UserRound } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import DefaultAvatar from '@/components/DefaultAvatar.vue'
+import { ExternalLink, MessageSquareHeart, Sparkles } from 'lucide-vue-next'
+import { ref } from 'vue'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { useAccountStore } from '@/store/accountStore'
-import { useEntitlementStore } from '@/store/entitlementStore'
-import { GEEKFUN_BASE_URL as CONSOLE_BASE_URL, openLoginUrl, openRegisterUrl } from '@/utils/authService'
 
-const { t } = useI18n()
-const accountStore = useAccountStore()
-const entitlementStore = useEntitlementStore()
-const refreshing = ref(false)
-const recovering = ref(false)
 const open = ref(false)
-
-const planBadge = computed(() => ({
-  label: 'Community',
-  cls: 'bg-primary/15 text-primary-text border-primary/30',
-}))
-
-const expiryText = computed(() => '')
-
-async function handleRefresh() {
-  refreshing.value = true
-  try {
-    await entitlementStore.refreshEntitlement(true)
-  }
-  finally {
-    refreshing.value = false
-  }
-}
-
-async function runRecovery() {
-  recovering.value = true
-  try {
-    await entitlementStore.attemptSessionRecovery()
-  }
-  finally {
-    recovering.value = false
-  }
-}
-
-function recoveryNeeded() {
-  if (entitlementStore.sessionPhase === 'anonymous')
-    return false
-  return entitlementStore.sessionExpired || entitlementStore.hasEntitlementError
-}
-
-watch(open, (isOpen) => {
-  if (isOpen && recoveryNeeded()) {
-    void runRecovery()
-  }
-})
-
-async function handleLogout() {
-  open.value = false
-  await entitlementStore.clearSessionState()
-}
+const GITHUB_REPO = 'https://github.com/ilystack/DBolt'
 </script>
 
 <template>
@@ -66,122 +13,50 @@ async function handleLogout() {
     <DropdownMenuTrigger as-child>
       <button
         class="mx-auto rounded-md flex h-8 w-8 cursor-pointer transition-transform items-center justify-center relative hover:scale-105"
-        :title="accountStore.isLoggedIn ? accountStore.username || accountStore.email : t('plan.section.loginLink')"
+        title="DBolt — Free & Open Source"
       >
         <span
-          v-if="accountStore.isLoggedIn"
-          class="text-lg text-primary-foreground font-bold rounded-md bg-primary flex h-8 w-8 items-center justify-center overflow-hidden"
+          class="text-primary-foreground font-bold p-1 rounded-md bg-primary flex h-8 w-8 shadow-sm items-center justify-center overflow-hidden"
         >
           <img
-            v-if="accountStore.avatar"
-            :src="accountStore.avatar"
-            alt=""
-            class="h-full w-full object-cover"
+            src="/app-icon.png"
+            alt="DBolt"
+            class="h-full w-full object-contain"
           >
-          <DefaultAvatar
-            v-else
-            class="h-full w-full"
-            :seed="accountStore.username || accountStore.email"
-          />
         </span>
-        <span
-          v-else
-          class="text-muted-foreground border border-border/60 bg-muted/40 flex h-8 w-8 items-center justify-center"
-        >
-          <UserRound class="h-4 w-4" />
-        </span>
-        <span
-          v-if="!accountStore.isLoggedIn"
-          class="rounded-full bg-destructive h-2 w-2 ring-2 ring-background bottom-0.5 right-0.5 absolute"
-          :title="t('plan.section.notLoggedIn')"
-        />
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuContent side="right" align="start" class="p-2 w-64">
-      <template v-if="accountStore.isLoggedIn">
-        <div class="p-2">
-          <p class="text-sm text-foreground font-semibold truncate">
-            {{ accountStore.username || accountStore.email }}
+      <div class="p-2">
+        <div class="flex items-center justify-between">
+          <p class="text-sm text-foreground font-bold">
+            DBolt
           </p>
-          <p class="text-xs text-muted-foreground truncate">
-            {{ accountStore.email }}
-          </p>
-          <span
-            class="text-caption font-semibold mt-1.5 px-2 py-0.5 rounded-full inline-flex items-center"
-            :class="planBadge.cls"
-          >
-            <Loader2
-              v-if="recovering || entitlementStore.planState === 'checking'"
-              class="mr-1 h-2.5 w-2.5 animate-spin"
-            />
-            {{ planBadge.label }}
+          <span class="text-[10px] text-primary-text font-semibold px-2 py-0.5 border border-primary/30 rounded-full bg-primary/15">
+            v1.0.1
           </span>
-          <!-- The re-login instruction outranks any cached benefit copy: the
-               session verdict is the only verified fact while degraded. -->
-          <p v-if="entitlementStore.sessionExpired" class="text-caption text-amber-500 mt-1">
-            {{ t('plan.section.sessionExpired') }}
-          </p>
-          <p v-else-if="expiryText" class="text-caption text-muted-foreground mt-1">
-            {{ expiryText }}
-          </p>
         </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          v-if="entitlementStore.sessionExpired"
-          :disabled="recovering"
-          @click="openLoginUrl()"
-        >
-          {{ t('plan.section.loginLink') }}
-        </DropdownMenuItem>
-        <DropdownMenuItem v-else :disabled="recovering" @click="openUrl(`${CONSOLE_BASE_URL}/subscribe`)">
-          {{ t('plan.tab') }}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          v-if="!recovering && !entitlementStore.sessionExpired && entitlementStore.hasEntitlementError"
-          @click="runRecovery"
-        >
-          <RefreshCw class="mr-2" />
-          {{ t('plan.section.refresh') }}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          v-else-if="!entitlementStore.sessionExpired"
-          :disabled="refreshing || recovering"
-          @click="handleRefresh"
-        >
-          <RefreshCw class="mr-2" :class="{ 'animate-spin': refreshing }" />
-          {{ t('plan.section.refresh') }}
-        </DropdownMenuItem>
-        <DropdownMenuItem :disabled="recovering" @click="openUrl(`${CONSOLE_BASE_URL}`)">
-          <Settings class="mr-2" />
-          {{ t('plan.section.manage') }}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          class="text-destructive-text focus:text-destructive-text"
-          :disabled="recovering"
-          @click="handleLogout"
-        >
-          <LogOut class="mr-2" />
-          {{ t('plan.section.logout') }}
-        </DropdownMenuItem>
-      </template>
-      <template v-else>
-        <div class="p-2">
-          <p class="text-sm text-foreground font-semibold">
-            {{ t('plan.section.notLoggedIn') }}
-          </p>
-          <p class="text-caption text-muted-foreground mt-1">
-            {{ t('plan.pricing') }}
-          </p>
+        <p class="text-xs text-muted-foreground mt-1">
+          Free & Open-Source Database Client
+        </p>
+        <div class="text-xs text-emerald-600 font-medium mt-2 px-2 py-1 border border-emerald-500/20 rounded bg-emerald-500/10 flex gap-1.5 items-center dark:text-emerald-400">
+          <Sparkles class="shrink-0 h-3.5 w-3.5" />
+          <span>All Features Unlocked</span>
         </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem @click="openLoginUrl()">
-          Log in
-        </DropdownMenuItem>
-        <DropdownMenuItem @click="openRegisterUrl()">
-          Register
-        </DropdownMenuItem>
-      </template>
+      </div>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem class="cursor-pointer" @click="openUrl(GITHUB_REPO)">
+        <ExternalLink class="mr-2 h-4 w-4" />
+        GitHub Repository
+      </DropdownMenuItem>
+      <DropdownMenuItem class="cursor-pointer" @click="openUrl(`${GITHUB_REPO}/releases`)">
+        <Sparkles class="mr-2 h-4 w-4" />
+        Releases & Changelog
+      </DropdownMenuItem>
+      <DropdownMenuItem class="cursor-pointer" @click="openUrl(`${GITHUB_REPO}/issues`)">
+        <MessageSquareHeart class="mr-2 h-4 w-4" />
+        Report an Issue
+      </DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>
 </template>

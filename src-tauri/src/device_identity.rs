@@ -1,4 +1,4 @@
-//! Device identity & fingerprint (geekfun#59).
+//! Device identity & fingerprint.
 //!
 //! Multi-source hardware identifiers are HMAC'd with an app-specific key
 //! before leaving the device — the server treats fingerprints and component

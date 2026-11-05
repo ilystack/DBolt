@@ -1,4 +1,4 @@
-//! Entitlement & version-lock resolution (geekfun#56 contract).
+//! Entitlement & version-lock resolution.
 //!
 //! The server owns all judgement semantics; the client only reads two
 //! server-computed fields from `GET /api/v1/subscriptions`:
@@ -343,7 +343,7 @@ async fn fetch_subscriptions(token: &str) -> Result<SubscriptionCache, Subscript
     if cfg!(debug_assertions) {
         eprintln!("[entitlement] GET /subscriptions response: {payload}");
     }
-    // The geekfun API wraps successful responses in an envelope:
+    // The API wraps successful responses in an envelope:
     //   { "code": 2000, "messages": [...], "data": { ...fields } }
     // Unwrap it so the field extraction sees the actual subscription data.
     let payload = payload.get("data").unwrap_or(&payload);

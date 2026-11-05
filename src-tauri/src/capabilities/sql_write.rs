@@ -457,9 +457,9 @@ mod tests {
         assert_eq!(
             classify_sql(
                 "postgres",
-                "WITH u AS (SELECT id FROM users WHERE email = 'seven@wentsen.com'), \
+                "WITH u AS (SELECT id FROM users WHERE email = 'dev@dbolt.io'), \
                  o AS (INSERT INTO organizations (name, slug, created_by_email) \
-                       VALUES ('wentsen', 'release-org', 'seven@wentsen.com') RETURNING id) \
+                       VALUES ('dbolt', 'release-org', 'dev@dbolt.io') RETURNING id) \
                  INSERT INTO memberships (user_id, org_id, role, scope, permissions) \
                  SELECT u.id, o.id, 'owner', 'org', '{}'::jsonb FROM u, o"
             )

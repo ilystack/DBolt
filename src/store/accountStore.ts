@@ -4,7 +4,7 @@ type AccountState = {
   sessionRevision: number
   token: string
   /**
-   * Device-bound 30-day lease (geekfun#59) — lives with the session so a
+   * Device-bound 30-day lease — lives with the session so a
    * logout (or a web re-login) invalidates it with the rest.
    */
   refreshToken: string

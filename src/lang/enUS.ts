@@ -153,7 +153,7 @@ export const enUS = {
       sessionLostSignedOut: 'Your session can no longer be renewed — you have been signed out. Log in again any time.',
       deviceActivationFailed: 'Device registration failed — automatic session renewal is unavailable.',
       notLoggedIn: 'You are not logged in.',
-      loginLink: 'Log in with Geekfun',
+      loginLink: 'GitHub Repository',
       refresh: 'Refresh',
       logout: 'Log out',
       manage: 'Manage subscription',

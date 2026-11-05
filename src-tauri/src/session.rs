@@ -1,4 +1,4 @@
-//! Refresh-token session (geekfun#59 §2.2 / cloud-sync P0).
+//! Refresh-token session.
 //!
 //! The refresh token is an opaque 30-day bearer credential rotated on every
 //! use. Storage lives with the frontend session (the persisted account

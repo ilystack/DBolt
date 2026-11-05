@@ -1,0 +1,2664 @@
+// ---------------------------------------------------------------------------
+// loop_runner — generic ReAct agent loop
+//
+// Generic over SessionStore and EventEmitter traits instead of Tauri.
+// Connection resolution is handled by the caller (pre-resolved HashMap).
+// All persistence goes through the SessionStore trait.
+// ---------------------------------------------------------------------------
+
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    time::Duration,
+};
+
+use futures::{
+    future::{select, Either},
+    pin_mut,
+    stream::FuturesUnordered,
+    StreamExt,
+};
+use serde_json::{json, Value};
+use tokio::sync::oneshot;
+
+use crate::{
+    chat_formatter::{
+        AnthropicChatFormatter, ChatFormatter, LlmMessage, LlmToolCall, OpenAIChatFormatter,
+    },
+    common::http_client::create_http_client,
+    common::sse::drain_event_blocks,
+    compact::{
+        count_projected_tokens, evaluate, filter_to_post_boundary, resolve_model_spec_for_session,
+        run_compact_manual,
+    },
+    conversation::prepare_for_llm,
+    loop_runner_support::new_id,
+    provider_adapter::{build_headers, get_base_url},
+    token_counter::count_chat_messages,
+    tool_executor::{ToolCallPreparation, ToolEnvelope, ToolExecutionError, ToolExecutor},
+    tools::get_tool_required_params,
+    traits::{CancelMap, ConfirmMap, EventEmitter, SessionStore, StoredMessage},
+};
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DEFAULT_MAX_ITERATIONS: usize = 200;
+const DEFAULT_WALL_CLOCK_BUDGET_SECS: u64 = 30 * 60;
+const DEFAULT_TOKEN_BUDGET: usize = 20_000_000;
+const CONFIRM_TIMEOUT_SECS: u64 = 300;
+const RETRY_DELAYS_MS: &[u64] = &[1_000, 3_000, 8_000];
+const TOOL_EXECUTION_TIMEOUT_SECS: u64 = 30;
+const MAX_RUNAWAY_ITERATIONS: usize = 5;
+const TOOL_RETRY_DELAYS_SECS: &[u64] = &[2, 5];
+const TOOL_MAX_ATTEMPTS: usize = 3;
+const MAX_CONFIRMATION_RENEWALS: usize = 3;
+const RETRY_JITTER_MS: u64 = 250;
+const RETRYABLE_ERROR_TYPES: &[&str] =
+    &["rate_limit_exceeded", "service_unavailable", "overloaded_error"];
+const FATAL_ERROR_TYPES: &[&str] =
+    &["insufficient_quota", "invalid_request_error", "authentication_error"];
+
+/// Instruction appended to the system prompt to encourage the model to
+/// emit all independent tool calls in a single response rather than one
+/// at a time.  Models that support batch tool calling (GPT-4o, Claude 3.5+)
+/// usually follow this natively; DeepSeek v4 thinking mode tends to emit
+/// single calls per response without it.
+const TOOL_CALL_BATCHING_INSTRUCTION: &str =
+    "\n\nWhen you need to call tools, emit ALL independent tool calls in a single response. \
+     Do NOT call one tool at a time — batch them together. \
+     You can execute multiple tools in parallel when they don't depend on each other.";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async fn jittered_sleep_ms(base_ms: u64) {
+    let jitter = rand::Rng::gen_range(
+        &mut rand::thread_rng(),
+        -(RETRY_JITTER_MS as i64)..=RETRY_JITTER_MS as i64,
+    );
+    let delay = (base_ms as i64 + jitter).max(0) as u64;
+    tokio::time::sleep(Duration::from_millis(delay)).await;
+}
+
+fn settings_get_str<'a>(settings: &'a Value, key: &str) -> Option<&'a str> {
+    settings.get(key).and_then(|v| v.as_str())
+}
+
+fn classify_error(body: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(body).ok()?;
+    v.get("error").and_then(|e| e.get("type")).and_then(|t| t.as_str()).map(|s| s.to_string())
+}
+
+fn is_retryable(err_type: &str) -> bool {
+    RETRYABLE_ERROR_TYPES.contains(&err_type)
+}
+
+fn is_fatal(err_type: &str) -> bool {
+    FATAL_ERROR_TYPES.contains(&err_type)
+}
+
+// ---------------------------------------------------------------------------
+// ConfirmGuard — RAII cleanup for confirm_map entries
+// ---------------------------------------------------------------------------
+
+struct ConfirmGuard {
+    confirm_map: ConfirmMap,
+    tool_call_id: String,
+}
+
+impl ConfirmGuard {
+    fn new(confirm_map: ConfirmMap, tool_call_id: String) -> Self {
+        Self { confirm_map, tool_call_id }
+    }
+}
+
+impl Drop for ConfirmGuard {
+    fn drop(&mut self) {
+        if let Ok(mut cm) = self.confirm_map.lock() {
+            cm.remove(&self.tool_call_id);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Message Projection Layer
+// ---------------------------------------------------------------------------
+
+/// Build the LLM message list from stored DB rows + optional system prompt.
+/// Filters, reshapes, and handles orphan tool_call_ids for provider compat.
+pub fn build_llm_messages(
+    messages: &[(String, String, String)],
+    system_prompt: Option<&str>,
+) -> Vec<LlmMessage> {
+    let mut out: Vec<LlmMessage> = Vec::new();
+    if let Some(sys) = system_prompt {
+        if !sys.trim().is_empty() {
+            out.push(LlmMessage {
+                role: "system".into(),
+                text_content: sys.to_string(),
+                tool_calls: None,
+                tool_call_id: None,
+                thinking: None,
+            });
+        }
+    }
+    fn flush_orphans(out: &mut Vec<LlmMessage>, pending: &mut HashSet<String>) {
+        if pending.is_empty() {
+            return;
+        }
+        let mut orphaned_ids: Vec<String> = Vec::new();
+        let mut orphan_names: HashMap<String, String> = HashMap::new();
+        for msg in out.iter() {
+            if let Some(ref calls) = msg.tool_calls {
+                for tc in calls {
+                    if pending.contains(&tc.id) {
+                        orphaned_ids.push(tc.id.clone());
+                        orphan_names.insert(tc.id.clone(), tc.name.clone());
+                    }
+                }
+            }
+        }
+        // Do NOT strip orphaned tool_calls from the preceding assistant message.
+        // The synthetic tool messages below reference those tool_call_ids — if
+        // we strip them, the tool messages become orphaned (no matching
+        // preceding assistant with tool_calls), causing API 400 errors.
+        for orphan_id in &orphaned_ids {
+            let name = orphan_names.get(orphan_id).cloned().unwrap_or_default();
+            out.push(LlmMessage {
+                role: "tool".into(),
+                text_content: format!(
+                    "Tool '{}' did not produce a result (execution timed out or was interrupted).",
+                    if name.is_empty() { "unknown" } else { &name }
+                ),
+                tool_calls: None,
+                tool_call_id: Some(orphan_id.clone()),
+                thinking: None,
+            });
+        }
+        pending.clear();
+    }
+
+    let mut pending_tool_call_ids: HashSet<String> = HashSet::new();
+
+    for (_id, role, content) in messages {
+        if role == "assistant" && content.starts_with("LLM HTTP ") {
+            continue;
+        }
+        if role == "tool" {
+            if let Ok(v) = serde_json::from_str::<Value>(content) {
+                let tool_call_id = v.get("tool_call_id").and_then(|x| x.as_str()).unwrap_or("");
+                let inner = v.get("content").and_then(|x| x.as_str()).unwrap_or("");
+                if tool_call_id.is_empty() || !pending_tool_call_ids.remove(tool_call_id) {
+                    continue;
+                }
+                out.push(LlmMessage {
+                    role: "tool".into(),
+                    text_content: inner.to_string(),
+                    tool_calls: None,
+                    tool_call_id: Some(tool_call_id.to_string()),
+                    thinking: None,
+                });
+            } else {
+                out.push(LlmMessage {
+                    role: "tool".into(),
+                    text_content: content.clone(),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    thinking: None,
+                });
+            }
+        } else if role == "assistant" {
+            flush_orphans(&mut out, &mut pending_tool_call_ids);
+            if let Ok(v) = serde_json::from_str::<Value>(content) {
+                if v.is_object() && (v.get("tool_calls").is_some() || v.get("content").is_some()) {
+                    let text_content =
+                        v.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
+                    let tool_calls = v.get("tool_calls").and_then(|tc| {
+                        tc.as_array().map(|arr| {
+                            arr.iter()
+                                .map(|call| {
+                                    let id = call
+                                        .get("id")
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let name = call
+                                        .get("function")
+                                        .and_then(|f| f.get("name"))
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let args = call
+                                        .get("function")
+                                        .and_then(|f| f.get("arguments"))
+                                        .and_then(|x| x.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    if !id.is_empty() {
+                                        pending_tool_call_ids.insert(id.clone());
+                                    }
+                                    LlmToolCall { id, name, arguments: args }
+                                })
+                                .collect()
+                        })
+                    });
+                    let thinking =
+                        v.get("thinking").and_then(|t| t.as_str()).map(|s| s.to_string());
+                    out.push(LlmMessage {
+                        role: "assistant".into(),
+                        text_content,
+                        tool_calls,
+                        tool_call_id: None,
+                        thinking,
+                    });
+                    continue;
+                }
+            }
+            out.push(LlmMessage {
+                role: "assistant".into(),
+                text_content: content.clone(),
+                tool_calls: None,
+                tool_call_id: None,
+                thinking: None,
+            });
+        } else {
+            flush_orphans(&mut out, &mut pending_tool_call_ids);
+            if role == "system" {
+                if let Ok(v) = serde_json::from_str::<Value>(content) {
+                    if v.get("_compact_boundary").and_then(|x| x.as_bool()).unwrap_or(false) {
+                        let summary = v.get("summary").and_then(|x| x.as_str()).unwrap_or_default();
+                        out.push(LlmMessage {
+                            role: "system".into(),
+                            text_content: summary.to_string(),
+                            tool_calls: None,
+                            tool_call_id: None,
+                            thinking: None,
+                        });
+                        continue;
+                    }
+                }
+            }
+            out.push(LlmMessage {
+                role: role.clone(),
+                text_content: content.clone(),
+                tool_calls: None,
+                tool_call_id: None,
+                thinking: None,
+            });
+        }
+    }
+    flush_orphans(&mut out, &mut pending_tool_call_ids);
+    out
+}
+
+/// Convert LlmMessage list to OpenAI-format JSON values for token counting.
+pub fn llm_messages_to_values(messages: &[LlmMessage]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|msg| match msg.role.as_str() {
+            "tool" => json!({
+                "role": "tool",
+                "tool_call_id": msg.tool_call_id,
+                "content": msg.text_content
+            }),
+            "assistant" => {
+                let mut m = json!({"role": "assistant", "content": msg.text_content});
+                if let Some(ref thinking) = msg.thinking {
+                    if !thinking.is_empty() {
+                        m["reasoning_content"] = Value::String(thinking.clone());
+                    }
+                }
+                if let Some(ref calls) = msg.tool_calls {
+                    let tc: Vec<Value> = calls
+                        .iter()
+                        .map(|tc| {
+                            json!({
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": tc.arguments
+                                }
+                            })
+                        })
+                        .collect();
+                    m["tool_calls"] = Value::Array(tc);
+                }
+                m
+            },
+            _ => json!({"role": msg.role, "content": msg.text_content}),
+        })
+        .collect()
+}
+
+/// Public wrapper that projects stored messages the same way as
+/// build_llm_messages. Used by count_projected_tokens for accurate
+/// token estimation that matches what the LLM actually receives.
+pub fn project_messages(messages: &[StoredMessage], system_prompt: Option<&str>) -> Vec<Value> {
+    let tuples: Vec<(String, String, String)> =
+        messages.iter().map(|m| (m.id.clone(), m.role.clone(), m.content.clone())).collect();
+    let llm_msgs = build_llm_messages(&tuples, system_prompt);
+    llm_messages_to_values(&llm_msgs)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct StreamAccumulator {
+    content: String,
+    thinking: String,
+    tool_calls: Vec<AccTool>,
+    finish_reason: String,
+}
+
+#[derive(Default, Clone)]
+struct AccTool {
+    id: String,
+    name: String,
+    arguments: String,
+}
+
+async fn stream_chat<E: EventEmitter>(
+    http_client: &reqwest::Client,
+    base_url: &str,
+    headers: reqwest::header::HeaderMap,
+    body: Value,
+    session_id: &str,
+    emitter: &E,
+    formatter: &dyn ChatFormatter,
+) -> Result<StreamAccumulator, String> {
+    let url = format!("{}{}", base_url.trim_end_matches('/'), formatter.chat_path());
+    let mut last_err = String::from("Stream failed");
+
+    for (attempt, &delay) in RETRY_DELAYS_MS.iter().enumerate() {
+        let resp = http_client.post(&url).headers(headers.clone()).json(&body).send().await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = format!("LLM request error: {}", e);
+                if attempt >= RETRY_DELAYS_MS.len() {
+                    return Err(last_err);
+                }
+                jittered_sleep_ms(delay).await;
+                continue;
+            },
+        };
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            let err_type = classify_error(&text).unwrap_or_default();
+            let retryable = !is_fatal(&err_type)
+                && (status.as_u16() == 429 || status.as_u16() == 503 || is_retryable(&err_type));
+            last_err = format!("LLM HTTP {}: {}", status, text);
+            if !retryable || attempt >= RETRY_DELAYS_MS.len() {
+                return Err(last_err);
+            }
+            jittered_sleep_ms(delay).await;
+            continue;
+        }
+
+        let mut acc = StreamAccumulator::default();
+        let mut buf: Vec<u8> = Vec::new();
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk.map_err(|e| format!("Stream chunk error: {}", e))?;
+            buf.extend_from_slice(&bytes);
+
+            // Decode only complete \n\n-terminated blocks. A network chunk can
+            // split a multi-byte UTF-8 char; decoding per chunk would corrupt it.
+            let done = !drain_event_blocks(&mut buf, &mut |event_block: &str| {
+                for line in event_block.lines() {
+                    let line = line.trim();
+                    if !line.starts_with("data:") {
+                        continue;
+                    }
+                    let data = line[5..].trim();
+                    if data == "[DONE]" {
+                        return false;
+                    }
+                    let delta = match formatter.parse_chunk(data) {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    };
+                    if !delta.content_delta.is_empty() {
+                        acc.content.push_str(&delta.content_delta);
+                        emitter.emit(
+                            "agent-loop-delta",
+                            json!({
+                                "session_id": session_id,
+                                "content": delta.content_delta,
+                            }),
+                        );
+                    }
+                    if !delta.thinking_delta.is_empty() {
+                        acc.thinking.push_str(&delta.thinking_delta);
+                        emitter.emit(
+                            "agent-loop-thinking-delta",
+                            json!({
+                                "session_id": session_id,
+                                "content": delta.thinking_delta,
+                            }),
+                        );
+                    }
+                    for tcd in &delta.tool_call_deltas {
+                        let idx = tcd.index;
+                        while acc.tool_calls.len() <= idx {
+                            acc.tool_calls.push(AccTool::default());
+                        }
+                        let entry = &mut acc.tool_calls[idx];
+                        if !tcd.id.is_empty() {
+                            entry.id = tcd.id.clone();
+                        }
+                        if !tcd.name.is_empty() {
+                            entry.name = tcd.name.clone();
+                        }
+                        if !tcd.arguments_delta.is_empty() {
+                            entry.arguments.push_str(&tcd.arguments_delta);
+                        }
+                    }
+                    if let Some(ref reason) = delta.finish_reason {
+                        acc.finish_reason = reason.clone();
+                    }
+                }
+                true
+            });
+            if done {
+                return Ok(acc);
+            }
+        }
+        return Ok(acc);
+    }
+
+    Err(last_err)
+}
+
+// ---------------------------------------------------------------------------
+// emit_loop_stopped helper
+// ---------------------------------------------------------------------------
+
+fn emit_loop_stopped<E: EventEmitter>(emitter: &E, session_id: &str, reason: &str, message: &str) {
+    emitter.emit(
+        "agent-loop-stopped",
+        json!({
+            "session_id": session_id,
+            "reason": reason,
+            "message": message,
+        }),
+    );
+    emitter.emit("agent-loop-done", json!({"session_id": session_id}));
+}
+
+// ---------------------------------------------------------------------------
+// Emit context usage helper
+// ---------------------------------------------------------------------------
+
+async fn emit_context_usage<S: SessionStore, E: EventEmitter>(
+    store: &S,
+    emitter: &E,
+    session_id: &str,
+    settings: &Value,
+) {
+    let Ok(messages) = store.load_messages_for_compact(session_id).await else {
+        return;
+    };
+    let visible = filter_to_post_boundary(messages);
+    let spec = resolve_model_spec_for_session(session_id, settings);
+    let decision = evaluate(&visible, &spec);
+    let system_prompt = settings_get_str(settings, "systemPrompt");
+    let tools = settings.get("tools");
+    let used = count_projected_tokens(&visible, system_prompt, tools, &spec);
+    let should_compact = used >= decision.trigger_at;
+    emitter.emit(
+        "agent-context-usage",
+        json!({
+            "session_id": session_id,
+            "used_tokens": used,
+            "capacity": decision.capacity,
+            "context_window": spec.context_window,
+            "output_reserve": spec.output_reserve,
+            "trigger_at": decision.trigger_at,
+            "should_compact": should_compact,
+            "model": spec.model_id,
+        }),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Inline append (no background spawn — store is &S, not &Arc<S>)
+// ---------------------------------------------------------------------------
+
+/// Write a message and emit the updated context-usage event.
+/// Does NOT spawn a background compaction task (use `conversation::prepare_for_llm`
+/// before each LLM call when compaction is needed).
+async fn inline_append<S: SessionStore, E: EventEmitter>(
+    store: &S,
+    emitter: &E,
+    settings: &Value,
+    id: &str,
+    session_id: &str,
+    role: &str,
+    content: &str,
+) -> Result<(), String> {
+    store.write_message(id, session_id, role, content).await?;
+    emit_context_usage(store, emitter, session_id, settings).await;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Main Loop — Public Face
+// ---------------------------------------------------------------------------
+
+/// Run the agent loop for a session. Generic over SessionStore + EventEmitter.
+/// Connections are expected to be pre-resolved by the caller.
+pub async fn run_agent_loop<S: SessionStore, E: EventEmitter>(
+    session_id: &str,
+    user_message: &str,
+    settings: &Value,
+    store: &S,
+    emitter: &E,
+    tool_executor: &dyn ToolExecutor,
+    connections: HashMap<String, Value>,
+    fallback_connection_config: Value,
+    confirm_map: &ConfirmMap,
+    cancel_map: &CancelMap,
+    is_parallel_ok: &(dyn Fn(&str) -> bool + Send + Sync),
+    should_deny: &(dyn Fn(&str, Option<&str>) -> bool + Send + Sync),
+) -> Result<(), String> {
+    let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cm = match cancel_map.lock() {
+            Ok(c) => c,
+            Err(e) => return Err(e.to_string()),
+        };
+        if cm.contains_key(session_id) {
+            return Err(format!("session already running: {}", session_id));
+        }
+        cm.insert(session_id.to_string(), cancel_tx);
+    }
+
+    let result = run_agent_loop_inner(
+        session_id,
+        user_message,
+        settings,
+        store,
+        emitter,
+        tool_executor,
+        connections,
+        fallback_connection_config,
+        confirm_map,
+        cancel_rx,
+        is_parallel_ok,
+        should_deny,
+    )
+    .await;
+
+    let _ = store.update_session_status(session_id, "idle").await;
+
+    {
+        if let Ok(mut cm) = cancel_map.lock() {
+            cm.remove(session_id);
+        }
+    }
+
+    if let Err(ref e) = result {
+        emitter.emit("agent-loop-error", json!({"session_id": session_id, "error": e}));
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
+// PreparedToolCall — collects confirmed tools for phased execution
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+struct PreparedToolCall {
+    tool_call_id: String,
+    #[allow(dead_code)]
+    assistant_message_id: String,
+    tool_name: String,
+    arguments: Value,
+    original_config: Value,
+    prepared_config: Value,
+    parallel_ok: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Main Loop — Inner
+// ---------------------------------------------------------------------------
+
+async fn run_agent_loop_inner<S: SessionStore, E: EventEmitter>(
+    session_id: &str,
+    user_message: &str,
+    settings: &Value,
+    store: &S,
+    emitter: &E,
+    tool_executor: &dyn ToolExecutor,
+    connections: HashMap<String, Value>,
+    fallback_connection_config: Value,
+    confirm_map: &ConfirmMap,
+    mut cancel_rx: oneshot::Receiver<()>,
+    is_parallel_ok: &(dyn Fn(&str) -> bool + Send + Sync),
+    should_deny: &(dyn Fn(&str, Option<&str>) -> bool + Send + Sync),
+) -> Result<(), String> {
+    store.update_session_status(session_id, "running").await?;
+
+    let user_id = new_id();
+    inline_append(store, emitter, settings, &user_id, session_id, "user", user_message).await?;
+
+    let batching_instruction = TOOL_CALL_BATCHING_INSTRUCTION;
+    let system_prompt = settings_get_str(settings, "systemPrompt").map_or_else(
+        || batching_instruction.to_string(),
+        |s| format!("{}\n{}", s, batching_instruction),
+    );
+
+    let base_url = get_base_url(settings);
+    let headers = build_headers(settings)?;
+    let http_proxy = settings_get_str(settings, "httpProxy").map(|s| s.to_string());
+    let proxy_mode = settings_get_str(settings, "proxyMode").unwrap_or("system");
+    let http_client = create_http_client(proxy_mode, http_proxy, None, None);
+
+    let allowed_tools: HashSet<String> = settings
+        .get("tools")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| {
+                    t.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str())
+                })
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut recent_tool_signatures: VecDeque<String> = VecDeque::with_capacity(4);
+
+    let max_iterations = settings
+        .get("maxIterations")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(DEFAULT_MAX_ITERATIONS);
+    let wall_clock_budget_secs = settings
+        .get("wallClockBudgetMin")
+        .and_then(|v| v.as_u64())
+        .map(|n| n.saturating_mul(60))
+        .unwrap_or(DEFAULT_WALL_CLOCK_BUDGET_SECS);
+    let token_budget = settings
+        .get("tokenBudget")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(DEFAULT_TOKEN_BUDGET);
+    let loop_started_at = std::time::Instant::now();
+
+    // Create formatter based on apiCompatibility setting.
+    // DeepSeek requires reasoning_content replay for tool-call turns;
+    // other providers (OpenAI o1/o3) reject it.
+    let provider = settings_get_str(settings, "provider").unwrap_or("").to_lowercase();
+    let is_deepseek = provider.contains("deep_seek") || provider.contains("deepseek");
+    let openai_formatter = OpenAIChatFormatter { replay_reasoning: is_deepseek };
+    let anthropic_formatter = AnthropicChatFormatter;
+    let api_compat = settings_get_str(settings, "apiCompatibility").unwrap_or("openai-compatible");
+    let formatter: &dyn ChatFormatter = match api_compat {
+        "anthropic" => &anthropic_formatter,
+        _ => &openai_formatter,
+    };
+    let model = settings_get_str(settings, "model").unwrap_or("gpt-4o-mini");
+
+    let mut cumulative_input_tokens: usize = 0;
+    let mut iter_count: usize = 0;
+    let mut consecutive_parse_failures: HashMap<String, usize> = HashMap::new();
+    let mut consecutive_400_errors: usize = 0;
+    const MAX_CONSECUTIVE_400: usize = 3;
+
+    loop {
+        if iter_count >= max_iterations {
+            emit_loop_stopped(
+                emitter,
+                session_id,
+                "iteration_cap",
+                &format!(
+                    "Agent paused after {} iterations (configured cap). The task may need more work — reply 'continue' or raise the cap in settings.",
+                    iter_count
+                ),
+            );
+            return Ok(());
+        }
+        let elapsed_secs = loop_started_at.elapsed().as_secs();
+        if elapsed_secs >= wall_clock_budget_secs {
+            emit_loop_stopped(
+                emitter,
+                session_id,
+                "wall_clock_budget",
+                &format!(
+                    "Agent paused after {}m wall-clock budget. Reply 'continue' to keep going or raise the budget in settings.",
+                    elapsed_secs / 60
+                ),
+            );
+            return Ok(());
+        }
+        iter_count += 1;
+        // Progress heartbeat
+        emitter.emit(
+            "agent-loop-iteration",
+            json!({
+                "session_id": session_id,
+                "iter_count": iter_count,
+                "max_iterations": max_iterations,
+            }),
+        );
+
+        // Prepare: run compaction if needed (uses store directly)
+        {
+            let prep_fut = prepare_for_llm(store, emitter, settings, session_id);
+            pin_mut!(prep_fut);
+            match select(prep_fut, &mut cancel_rx).await {
+                Either::Left((result, _)) => result?,
+                Either::Right((_, _)) => return Err("cancelled".to_string()),
+            }
+        }
+
+        let history = ensure_tool_result_completeness(store, session_id).await?;
+        let history = strip_pre_compaction(history);
+        let system_prompt_str: Option<&str> = Some(&system_prompt);
+        let chat_msgs = build_llm_messages(&history, system_prompt_str);
+        let spec = resolve_model_spec_for_session(session_id, settings);
+        let chat_msgs_values = llm_messages_to_values(&chat_msgs);
+        cumulative_input_tokens =
+            cumulative_input_tokens.saturating_add(count_chat_messages(&chat_msgs_values, &spec));
+        if cumulative_input_tokens >= token_budget {
+            emit_loop_stopped(
+                emitter,
+                session_id,
+                "token_budget",
+                &format!(
+                    "Agent paused after consuming {} input tokens (configured budget {}). Reply 'continue' to keep going or raise the budget in settings.",
+                    cumulative_input_tokens, token_budget
+                ),
+            );
+            return Ok(());
+        }
+        let raw_tools = settings.get("tools");
+        let body = formatter.build_request(model, system_prompt_str, &chat_msgs, raw_tools, true);
+        // Emit waiting-for-LLM event
+        emitter.emit(
+            "agent-loop-waiting-llm",
+            json!({
+                "session_id": session_id,
+                "iter_count": iter_count,
+            }),
+        );
+
+        // Stream chat with cancellation support
+        let acc = {
+            let stream_fut = stream_chat(
+                &http_client,
+                &base_url,
+                headers.clone(),
+                body,
+                session_id,
+                emitter,
+                formatter,
+            );
+            let cancel_fut = &mut cancel_rx;
+            pin_mut!(stream_fut);
+            pin_mut!(cancel_fut);
+            match select(stream_fut, cancel_fut).await {
+                Either::Left((result, _)) => match result {
+                    Ok(a) => {
+                        consecutive_400_errors = 0;
+                        a
+                    },
+                    Err(e) => {
+                        let err_type = classify_error(&e).unwrap_or_default();
+                        let is_tool_msg_mismatch = e.contains("insufficient tool messages");
+                        if is_tool_msg_mismatch && consecutive_400_errors < MAX_CONSECUTIVE_400 {
+                            consecutive_400_errors += 1;
+                            let _ = inline_append(
+                                store,
+                                emitter,
+                                settings,
+                                &new_id(),
+                                session_id,
+                                "assistant",
+                                &e,
+                            )
+                            .await;
+                            continue;
+                        }
+                        let _ = inline_append(
+                            store,
+                            emitter,
+                            settings,
+                            &new_id(),
+                            session_id,
+                            "assistant",
+                            &e,
+                        )
+                        .await;
+                        if is_fatal(&err_type) || e.starts_with("LLM HTTP 4") {
+                            emitter.emit(
+                                "agent-loop-error",
+                                json!({"session_id": session_id, "error": e}),
+                            );
+                        } else {
+                            emit_loop_stopped(emitter, session_id, "llm_error", &e);
+                        }
+                        return Ok(());
+                    },
+                },
+                Either::Right((_, _)) => {
+                    return Err("cancelled".to_string());
+                },
+            }
+        };
+
+        let assistant_message_id = new_id();
+
+        if acc.tool_calls.is_empty() {
+            let payload = if acc.thinking.is_empty() {
+                acc.content.clone()
+            } else {
+                json!({
+                    "content": acc.content,
+                    "thinking": acc.thinking,
+                })
+                .to_string()
+            };
+            inline_append(
+                store,
+                emitter,
+                settings,
+                &assistant_message_id,
+                session_id,
+                "assistant",
+                &payload,
+            )
+            .await?;
+            emitter.emit(
+                "agent-loop-step-done",
+                json!({"session_id": session_id, "message_id": assistant_message_id}),
+            );
+            emitter.emit("agent-loop-done", json!({"session_id": session_id}));
+            return Ok(());
+        }
+
+        // Runaway-loop guard: if the LLM emits the same tool-call set 5x, stop.
+        let iter_signature: String = {
+            let mut sigs: Vec<String> =
+                acc.tool_calls.iter().map(|t| format!("{}:{}", t.name, t.arguments)).collect();
+            sigs.sort();
+            sigs.join("|")
+        };
+        if !acc.content.is_empty() {
+            recent_tool_signatures.clear();
+        }
+        recent_tool_signatures.push_back(iter_signature.clone());
+        if recent_tool_signatures.len() > MAX_RUNAWAY_ITERATIONS {
+            recent_tool_signatures.pop_front();
+        }
+
+        let resolved_tool_ids: Vec<String> = acc
+            .tool_calls
+            .iter()
+            .map(|t| if t.id.is_empty() { new_id() } else { t.id.clone() })
+            .collect();
+
+        let tool_calls_json: Vec<Value> = acc
+            .tool_calls
+            .iter()
+            .zip(resolved_tool_ids.iter())
+            .map(|(t, resolved_id)| {
+                json!({
+                    "id": resolved_id,
+                    "type": "function",
+                    "function": {"name": t.name, "arguments": t.arguments}
+                })
+            })
+            .collect();
+        let assistant_payload = json!({
+            "content": if acc.content.is_empty() { Value::Null } else { Value::String(acc.content.clone()) },
+            "thinking": if acc.thinking.is_empty() { Value::Null } else { Value::String(acc.thinking.clone()) },
+            "tool_calls": tool_calls_json,
+        });
+        inline_append(
+            store,
+            emitter,
+            settings,
+            &assistant_message_id,
+            session_id,
+            "assistant",
+            &assistant_payload.to_string(),
+        )
+        .await?;
+        emitter.emit(
+            "agent-loop-step-done",
+            json!({"session_id": session_id, "message_id": assistant_message_id}),
+        );
+
+        if recent_tool_signatures.len() == MAX_RUNAWAY_ITERATIONS
+            && recent_tool_signatures.iter().all(|s| s == &iter_signature)
+        {
+            let stuck_msg = "Agent stopped: detected the same tool call repeating across 5 iterations with no progress. Try rephrasing your request or check the tool's previous results.";
+            inline_append(store, emitter, settings, &new_id(), session_id, "assistant", stuck_msg)
+                .await?;
+            emitter.emit("agent-loop-error", json!({"session_id": session_id, "error": stuck_msg}));
+            return Ok(());
+        }
+
+        let mut prepared: Vec<PreparedToolCall> = Vec::new();
+        for (tc, tool_call_id) in acc.tool_calls.iter().zip(resolved_tool_ids.iter()) {
+            let tool_call_id: String = tool_call_id.clone();
+            let tool_name: String = tc.name.clone();
+            let arguments_value: Value = match serde_json::from_str(&tc.arguments) {
+                Ok(v) => {
+                    consecutive_parse_failures.remove(&tool_name);
+                    v
+                },
+                Err(e) => {
+                    store
+                        .insert_tool_call(
+                            &tool_call_id,
+                            &assistant_message_id,
+                            session_id,
+                            &tool_name,
+                            &tc.arguments,
+                            "failed",
+                        )
+                        .await?;
+                    let required = get_tool_required_params(&tool_name)
+                        .map(|p| format!(" Required parameters: {}.", p))
+                        .unwrap_or_default();
+                    let err_msg = json!({
+                        "tool_call_id": tool_call_id,
+                        "name": tool_name,
+                        "content": format!("Invalid arguments for '{}': {}.{}", tool_name, e, required),
+                    });
+                    inline_append(
+                        store,
+                        emitter,
+                        settings,
+                        &new_id(),
+                        session_id,
+                        "tool",
+                        &err_msg.to_string(),
+                    )
+                    .await?;
+
+                    let fail_count =
+                        consecutive_parse_failures.entry(tool_name.clone()).or_insert(0usize);
+                    *fail_count += 1;
+                    if *fail_count >= 2 {
+                        let param_hint = get_tool_required_params(&tool_name).unwrap_or_default();
+                        let stuck_msg = if param_hint.is_empty() {
+                            format!(
+                                "Model keeps generating invalid tool calls for '{}'. \
+                                 Try rephrasing your request or switch to a model with better \
+                                 function-calling support.",
+                                tool_name,
+                            )
+                        } else {
+                            format!(
+                                "Model keeps generating invalid tool calls for '{}'. \
+                                 The tool requires valid JSON arguments with fields: {}. \
+                                 Try rephrasing your request to include all required parameters, \
+                                 or switch to a model with better function-calling support.",
+                                tool_name, param_hint,
+                            )
+                        };
+                        inline_append(
+                            store,
+                            emitter,
+                            settings,
+                            &new_id(),
+                            session_id,
+                            "assistant",
+                            &stuck_msg,
+                        )
+                        .await?;
+                        emitter.emit(
+                            "agent-loop-error",
+                            json!({"session_id": session_id, "error": stuck_msg}),
+                        );
+                        return Ok(());
+                    }
+                    continue;
+                },
+            };
+
+            store
+                .insert_tool_call(
+                    &tool_call_id,
+                    &assistant_message_id,
+                    session_id,
+                    &tool_name,
+                    &tc.arguments,
+                    "pending",
+                )
+                .await?;
+
+            if allowed_tools.is_empty() || !allowed_tools.contains(&tc.name) {
+                store.update_tool_call_status(&tool_call_id, "failed").await?;
+                let err_content = format!("Tool '{}' is not allowed in this session.", tool_name);
+                let deny_msg = json!({
+                    "tool_call_id": tool_call_id,
+                    "name": tool_name,
+                    "content": err_content,
+                });
+                inline_append(
+                    store,
+                    emitter,
+                    settings,
+                    &new_id(),
+                    session_id,
+                    "tool",
+                    &deny_msg.to_string(),
+                )
+                .await?;
+                emitter.emit(
+                    "agent-loop-tool-result",
+                    json!({
+                        "session_id": session_id,
+                        "tool_call_id": tool_call_id,
+                        "error": true,
+                        "envelope": { "summary": err_content },
+                    }),
+                );
+                continue;
+            }
+
+            // Resolve connection config from the pre-resolved connections map
+            let conn_id = arguments_value.get("connection_id").and_then(|v| v.as_str());
+            let resolved_config = match conn_id {
+                Some(conn_id) => match connections.get(conn_id) {
+                    Some(cfg) => cfg.clone(),
+                    None => {
+                        store.update_tool_call_status(&tool_call_id, "failed").await?;
+                        let err_content = format!(
+                            "Unknown connection_id '{}' for tool '{}'.",
+                            conn_id, tool_name
+                        );
+                        let err_msg = json!({
+                            "tool_call_id": tool_call_id,
+                            "name": tool_name,
+                            "content": err_content,
+                        });
+                        inline_append(
+                            store,
+                            emitter,
+                            settings,
+                            &new_id(),
+                            session_id,
+                            "tool",
+                            &err_msg.to_string(),
+                        )
+                        .await?;
+                        emitter.emit(
+                            "agent-loop-tool-result",
+                            json!({
+                                "session_id": session_id,
+                                "tool_call_id": tool_call_id,
+                                "error": true,
+                                "envelope": { "summary": err_content },
+                            }),
+                        );
+                        continue;
+                    },
+                },
+                None => {
+                    let connectionless = crate::capabilities::registry::registry()
+                        .get(&tool_name)
+                        .is_some_and(|cap| {
+                            matches!(
+                                cap.source_kind,
+                                crate::capabilities::types::SourceKind::AppLocal
+                                    | crate::capabilities::types::SourceKind::File
+                            )
+                        });
+                    if connectionless {
+                        Value::Null
+                    } else {
+                        if !connections.is_empty() {
+                            store.update_tool_call_status(&tool_call_id, "failed").await?;
+                            let err_content = format!(
+                            "Tool '{}' requires a connection_id argument. Available connections: {}.",
+                            tool_name,
+                            connections.keys().cloned().collect::<Vec<_>>().join(", ")
+                        );
+                            let err_msg = json!({
+                                "tool_call_id": tool_call_id,
+                                "name": tool_name,
+                                "content": err_content,
+                            });
+                            inline_append(
+                                store,
+                                emitter,
+                                settings,
+                                &new_id(),
+                                session_id,
+                                "tool",
+                                &err_msg.to_string(),
+                            )
+                            .await?;
+                            emitter.emit(
+                                "agent-loop-tool-result",
+                                json!({
+                                    "session_id": session_id,
+                                    "tool_call_id": tool_call_id,
+                                    "error": true,
+                                    "envelope": { "summary": err_content },
+                                }),
+                            );
+                            continue;
+                        }
+                        fallback_connection_config.clone()
+                    }
+                },
+            };
+
+            let Some(preparation) = prepare_and_confirm(
+                &ToolCallRequest {
+                    tool_call_id: &tool_call_id,
+                    tool_name: &tool_name,
+                    arguments: &arguments_value,
+                    connection_config: &resolved_config,
+                },
+                store,
+                settings,
+                &ToolExecutionContext {
+                    session_id,
+                    emitter,
+                    tool_executor,
+                    connections: &connections,
+                    confirm_map,
+                },
+                &mut cancel_rx,
+                || should_deny(&tool_name, conn_id),
+            )
+            .await?
+            else {
+                continue;
+            };
+
+            let parallel_ok = is_parallel_ok(&tool_name);
+            prepared.push(PreparedToolCall {
+                tool_call_id: tool_call_id.clone(),
+                assistant_message_id: assistant_message_id.clone(),
+                tool_name: tool_name.clone(),
+                arguments: arguments_value.clone(),
+                original_config: resolved_config,
+                prepared_config: preparation.connection_config,
+                parallel_ok,
+            });
+        }
+
+        if prepared.is_empty() {
+            continue;
+        }
+        execute_phase2_3(
+            prepared,
+            store,
+            &ToolExecutionContext {
+                session_id,
+                emitter,
+                tool_executor,
+                connections: &connections,
+                confirm_map,
+            },
+            &mut cancel_rx,
+        )
+        .await?;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2+3: Parallel execution + result processing
+// ---------------------------------------------------------------------------
+
+struct ToolExecutionResult {
+    index: usize,
+    tool_call_id: String,
+    tool_name: String,
+    result: Result<ToolEnvelope, ToolExecutionError>,
+    cancelled: bool,
+}
+
+const TOOL_MSG_WRITE_RETRIES: usize = 3;
+const TOOL_MSG_WRITE_RETRY_DELAY_MS: &[u64] = &[100, 500, 1000];
+
+async fn write_tool_message_with_retry<S: SessionStore>(
+    store: &S,
+    session_id: &str,
+    tool_call_id: &str,
+    tool_name: &str,
+    content: &str,
+) -> Result<(), String> {
+    let mut last_err = String::new();
+    for attempt in 0..TOOL_MSG_WRITE_RETRIES {
+        let msg_id = new_id();
+        match store.write_message(&msg_id, session_id, "tool", content).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last_err = e;
+                if attempt + 1 < TOOL_MSG_WRITE_RETRIES {
+                    let delay = TOOL_MSG_WRITE_RETRY_DELAY_MS.get(attempt).copied().unwrap_or(500);
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                }
+            },
+        }
+    }
+    Err(format!(
+        "Failed to persist tool message for '{}' (call_id={}) after {} retries: {}",
+        tool_name, tool_call_id, TOOL_MSG_WRITE_RETRIES, last_err
+    ))
+}
+
+/// Verify every `tool_call_id` in the most recent assistant message with
+/// tool_calls has a matching tool result message in the DB. Missing ones get
+/// synthetic error tool messages written. Returns the (possibly amended)
+/// history so callers don't need a second `load_active_history` call.
+async fn ensure_tool_result_completeness<S: SessionStore>(
+    store: &S,
+    session_id: &str,
+) -> Result<Vec<(String, String, String)>, String> {
+    let history = store.load_active_history(session_id).await?;
+
+    let last_assistant = history.iter().rev().find(|(_, role, content)| {
+        role == "assistant" && serde_json::from_str::<Value>(content).ok().is_some()
+    });
+
+    let Some((_, _, content)) = last_assistant else {
+        return Ok(history);
+    };
+
+    let v: Value = serde_json::from_str(content).map_err(|e| e.to_string())?;
+    let tool_call_ids: Vec<String> = v
+        .get("tool_calls")
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|c| {
+                    c.get("id")
+                        .and_then(|x| x.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if tool_call_ids.is_empty() {
+        return Ok(history);
+    }
+
+    let known: HashSet<String> = history
+        .iter()
+        .filter(|(_, role, _)| role == "tool")
+        .filter_map(|(_, _, content)| {
+            serde_json::from_str::<Value>(content)
+                .ok()
+                .and_then(|v| v.get("tool_call_id").and_then(|x| x.as_str()).map(|s| s.to_string()))
+        })
+        .collect();
+
+    let mut amended = false;
+    for missing in tool_call_ids.iter().filter(|id| !known.contains(*id)) {
+        let fallback = json!({
+            "tool_call_id": missing,
+            "name": "unknown",
+            "content": "Tool result was not persisted (recovered by integrity check).",
+        });
+        let _ = store.write_message(&new_id(), session_id, "tool", &fallback.to_string()).await;
+        amended = true;
+    }
+
+    if amended {
+        return store.load_active_history(session_id).await;
+    }
+    Ok(history)
+}
+
+/// Strip messages before the last compact boundary from the history list.
+/// Compact boundaries are system messages with `_compact_boundary: true`
+/// inserted by compaction —  pre-compaction messages are summarized and
+/// represented by the boundary's summary.  Keeping them would send both
+/// the old messages AND the summary to the LLM, duplicating context.
+/// The boundary itself is kept so `build_llm_messages` can extract its
+/// summary as a system message.
+fn strip_pre_compaction(
+    mut history: Vec<(String, String, String)>,
+) -> Vec<(String, String, String)> {
+    let last_boundary = history.iter().rposition(|(_, role, content)| {
+        role == "system"
+            && serde_json::from_str::<Value>(content)
+                .ok()
+                .and_then(|v| v.get("_compact_boundary").and_then(|b| b.as_bool()))
+                .unwrap_or(false)
+    });
+    match last_boundary {
+        Some(idx) => history.split_off(idx),
+        None => history,
+    }
+}
+
+struct ToolExecutionContext<'a, E> {
+    session_id: &'a str,
+    emitter: &'a E,
+    tool_executor: &'a dyn ToolExecutor,
+    connections: &'a HashMap<String, Value>,
+    confirm_map: &'a ConfirmMap,
+}
+
+struct ToolCallRequest<'a> {
+    tool_call_id: &'a str,
+    tool_name: &'a str,
+    arguments: &'a Value,
+    connection_config: &'a Value,
+}
+
+async fn prepare_and_confirm<S: SessionStore, E: EventEmitter>(
+    request: &ToolCallRequest<'_>,
+    store: &S,
+    settings: &Value,
+    context: &ToolExecutionContext<'_, E>,
+    cancel_rx: &mut oneshot::Receiver<()>,
+    legacy_denied: impl FnOnce() -> bool + Send,
+) -> Result<Option<ToolCallPreparation>, String> {
+    let tool_call_id = request.tool_call_id;
+    let tool_name = request.tool_name;
+    let arguments_value = request.arguments;
+    let session_id = context.session_id;
+    let emitter = context.emitter;
+    let confirm_map = context.confirm_map;
+    let preparation = context.tool_executor.prepare(
+        tool_name,
+        arguments_value,
+        request.connection_config,
+        context.connections,
+    );
+
+    if preparation.is_err() || legacy_denied() {
+        store.update_tool_call_status(tool_call_id, "denied").await?;
+        let deny_content = preparation.err().unwrap_or_else(|| {
+            format!("Tool '{}' was denied by server permission policy.", tool_name)
+        });
+        let deny_msg = json!({
+            "tool_call_id": tool_call_id,
+            "name": tool_name,
+            "content": deny_content,
+        });
+        inline_append(
+            store,
+            emitter,
+            settings,
+            &new_id(),
+            session_id,
+            "tool",
+            &deny_msg.to_string(),
+        )
+        .await?;
+        emitter.emit(
+            "agent-loop-tool-result",
+            json!({
+                "session_id": session_id,
+                "tool_call_id": tool_call_id,
+                "error": true,
+                "denied": true,
+                "tool_name": tool_name,
+                "arguments": arguments_value,
+                "envelope": { "summary": deny_content },
+            }),
+        );
+        return Ok(None);
+    }
+
+    let preparation = preparation?;
+
+    let (confirm_tx, confirm_rx) = oneshot::channel::<bool>();
+    {
+        let mut cm = match confirm_map.lock() {
+            Ok(c) => c,
+            Err(e) => return Err(e.to_string()),
+        };
+        cm.insert(tool_call_id.to_owned(), confirm_tx);
+    }
+    let _guard = ConfirmGuard::new(confirm_map.clone(), tool_call_id.to_owned());
+
+    emitter.emit(
+        "agent-loop-tool-call",
+        json!({
+            "session_id": session_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "arguments": arguments_value,
+            "confirmation_required": preparation.confirmation_required,
+            "risk_level": preparation.risk_level.or_else(|| {
+                crate::capabilities::registry::registry().get(tool_name).map(|cap| cap.risk_level)
+            }),
+        }),
+    );
+
+    let confirm_future =
+        tokio::time::timeout(Duration::from_secs(CONFIRM_TIMEOUT_SECS), confirm_rx);
+
+    let allowed = {
+        let cf = confirm_future;
+        let cancel_fut = &mut *cancel_rx;
+        pin_mut!(cf);
+        pin_mut!(cancel_fut);
+        match select(cf, cancel_fut).await {
+            Either::Left((result, _)) => match result {
+                Ok(Ok(v)) => v,
+                Ok(Err(_)) => false,
+                Err(_) => {
+                    return Err(format!("tool confirmation timeout: {}", tool_call_id));
+                },
+            },
+            Either::Right((_, _)) => {
+                return Err("cancelled".to_string());
+            },
+        }
+    };
+
+    if !allowed {
+        store.update_tool_call_status(tool_call_id, "denied").await?;
+        let tool_deny_msg = json!({
+            "tool_call_id": tool_call_id,
+            "name": tool_name,
+            "content": format!("Tool call '{}' was denied by the user. Try an alternative approach.", tool_name),
+        });
+        inline_append(
+            store,
+            emitter,
+            settings,
+            &new_id(),
+            session_id,
+            "tool",
+            &tool_deny_msg.to_string(),
+        )
+        .await?;
+        return Ok(None);
+    }
+
+    store.update_tool_call_status(tool_call_id, "approved").await?;
+
+    Ok(Some(preparation))
+}
+
+async fn execute_with_retry<S: SessionStore, E: EventEmitter>(
+    tool: &PreparedToolCall,
+    store: &S,
+    context: &ToolExecutionContext<'_, E>,
+) -> Result<ToolEnvelope, ToolExecutionError> {
+    let session_id = context.session_id;
+    let emitter = context.emitter;
+    let tool_executor = context.tool_executor;
+    let connections = context.connections;
+    let confirm_map = context.confirm_map;
+    let mut config = tool.prepared_config.clone();
+    let mut attempt = 0;
+    let mut renewals = 0;
+    loop {
+        let result = tokio::time::timeout(
+            Duration::from_secs(TOOL_EXECUTION_TIMEOUT_SECS),
+            tool_executor.execute_checked(&tool.tool_name, &tool.arguments, &config),
+        )
+        .await;
+        let error = match result {
+            Ok(Ok(envelope)) => return Ok(envelope),
+            Ok(Err(error)) => error,
+            Err(_) => ToolExecutionError::Failed(format!(
+                "Tool execution timed out after {}s",
+                TOOL_EXECUTION_TIMEOUT_SECS
+            )),
+        };
+        match error {
+            ToolExecutionError::Denied(_) => return Err(error),
+            ToolExecutionError::ConfirmationRequired => {
+                if renewals >= MAX_CONFIRMATION_RENEWALS {
+                    return Err(ToolExecutionError::Failed(format!(
+                        "Tool call exceeded the limit of {} confirmation renewals",
+                        MAX_CONFIRMATION_RENEWALS
+                    )));
+                }
+                renewals += 1;
+                let preparation = tool_executor
+                    .prepare(&tool.tool_name, &tool.arguments, &tool.original_config, connections)
+                    .map_err(ToolExecutionError::Denied)?;
+                let (tx, rx) = oneshot::channel();
+                confirm_map
+                    .lock()
+                    .map_err(|e| ToolExecutionError::Failed(e.to_string()))?
+                    .insert(tool.tool_call_id.clone(), tx);
+                let _guard = ConfirmGuard::new(confirm_map.clone(), tool.tool_call_id.clone());
+                store.update_tool_call_status(&tool.tool_call_id, "pending").await?;
+                emitter.emit(
+                    "agent-loop-tool-call",
+                    json!({
+                        "session_id": session_id,
+                        "tool_call_id": tool.tool_call_id,
+                        "tool_name": tool.tool_name,
+                        "arguments": tool.arguments,
+                        "risk_level": preparation.risk_level,
+                        "confirmation_required": preparation.confirmation_required,
+                    }),
+                );
+                let allowed = tokio::time::timeout(Duration::from_secs(CONFIRM_TIMEOUT_SECS), rx)
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .unwrap_or(false);
+                if !allowed {
+                    return Err(ToolExecutionError::Denied("Tool call was not approved".into()));
+                }
+                store.update_tool_call_status(&tool.tool_call_id, "approved").await?;
+                config = preparation.connection_config;
+            },
+            ToolExecutionError::Failed(_) => {
+                attempt += 1;
+                if attempt >= TOOL_MAX_ATTEMPTS {
+                    return Err(error);
+                }
+                let delay = TOOL_RETRY_DELAYS_SECS.get(attempt - 1).copied().unwrap_or(5);
+                emitter.emit(
+                    "agent-loop-tool-retry",
+                    json!({
+                        "session_id": session_id,
+                        "tool_call_id": tool.tool_call_id,
+                        "tool_name": tool.tool_name,
+                        "attempt": attempt + 1,
+                        "max_attempts": TOOL_MAX_ATTEMPTS,
+                        "delay_secs": delay,
+                    }),
+                );
+                tokio::time::sleep(Duration::from_secs(delay)).await;
+            },
+        }
+    }
+}
+
+async fn execute_phase2_3<S: SessionStore, E: EventEmitter>(
+    prepared: Vec<PreparedToolCall>,
+    store: &S,
+    context: &ToolExecutionContext<'_, E>,
+    cancel_rx: &mut oneshot::Receiver<()>,
+) -> Result<(), String> {
+    let session_id = context.session_id;
+    let emitter = context.emitter;
+    // --- Phase 2: Partition into execution groups & execute ---
+    let mut all_results: Vec<ToolExecutionResult> = Vec::new();
+    let mut global_cancelled = false;
+    let mut pos = 0;
+
+    while pos < prepared.len() {
+        let group_start = pos;
+        let is_parallel = prepared[pos].parallel_ok;
+        pos += 1;
+        while is_parallel && pos < prepared.len() && prepared[pos].parallel_ok {
+            pos += 1;
+        }
+        let group_end = pos;
+
+        if is_parallel && (group_end - group_start) > 1 {
+            // Parallel batch via FuturesUnordered
+            let mut futs = FuturesUnordered::new();
+            #[allow(clippy::needless_range_loop)]
+            for j in group_start..group_end {
+                let tool = &prepared[j];
+                let index = j;
+                let tool_call_id = tool.tool_call_id.clone();
+                let tool_name = tool.tool_name.clone();
+                futs.push(async move {
+                    let result = execute_with_retry(tool, store, context).await;
+                    ToolExecutionResult { index, tool_call_id, tool_name, result, cancelled: false }
+                });
+            }
+
+            let mut batch_completed: Vec<ToolExecutionResult> = Vec::new();
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut *cancel_rx => {
+                        global_cancelled = true;
+                        break;
+                    }
+                    result = futs.next() => {
+                        match result {
+                            Some(r) => batch_completed.push(r),
+                            None => break,
+                        }
+                    }
+                }
+            }
+
+            let completed_indices: HashSet<usize> =
+                batch_completed.iter().map(|r| r.index).collect();
+            #[allow(clippy::needless_range_loop)]
+            for j in group_start..group_end {
+                if !completed_indices.contains(&j) {
+                    let tool = &prepared[j];
+                    all_results.push(ToolExecutionResult {
+                        index: j,
+                        tool_call_id: tool.tool_call_id.clone(),
+                        tool_name: tool.tool_name.clone(),
+                        result: Err(ToolExecutionError::Failed("cancelled".to_string())),
+                        cancelled: true,
+                    });
+                }
+            }
+            all_results.extend(batch_completed);
+        } else {
+            // Sequential: single tool
+            let tool = &prepared[group_start];
+            let index = group_start;
+            let tool_call_id = tool.tool_call_id.clone();
+            let tool_name = tool.tool_name.clone();
+
+            let tr = tokio::select! {
+                biased;
+                _ = &mut *cancel_rx => {
+                    ToolExecutionResult {
+                        index,
+                        tool_call_id,
+                        tool_name,
+                        result: Err(ToolExecutionError::Failed("cancelled".to_string())),
+                        cancelled: true,
+                    }
+                }
+                r = execute_with_retry(tool, store, context) => {
+                    match r {
+                        Ok(envelope) => ToolExecutionResult {
+                            index,
+                            tool_call_id,
+                            tool_name,
+                            result: Ok(envelope),
+                            cancelled: false,
+                        },
+                        Err(e) => ToolExecutionResult {
+                            index,
+                            tool_call_id,
+                            tool_name,
+                            result: Err(e),
+                            cancelled: false,
+                        },
+                    }
+                }
+            };
+
+            if tr.cancelled {
+                global_cancelled = true;
+            }
+            all_results.push(tr);
+        }
+
+        if global_cancelled {
+            break;
+        }
+    }
+
+    // Mark any remaining unprocessed tools as cancelled
+    if global_cancelled {
+        let processed: HashSet<usize> = all_results.iter().map(|r| r.index).collect();
+        for (j, tool) in prepared.iter().enumerate() {
+            if !processed.contains(&j) {
+                all_results.push(ToolExecutionResult {
+                    index: j,
+                    tool_call_id: tool.tool_call_id.clone(),
+                    tool_name: tool.tool_name.clone(),
+                    result: Err(ToolExecutionError::Failed("cancelled".to_string())),
+                    cancelled: true,
+                });
+            }
+        }
+    }
+
+    // --- Phase 3: Process results in original order ---
+    // Each result is processed independently — a storage error for one tool
+    // must not prevent subsequent tools from being recorded.
+    all_results.sort_by_key(|r| r.index);
+
+    for result in &all_results {
+        // Each result is processed independently — a transient failure on
+        // insert_tool_result or update_tool_call_status must NOT prevent
+        // the critical tool message from being written.  Without the tool
+        // message, build_llm_messages orphans the tool_call_id → 400 error.
+        let write_result = if result.cancelled {
+            let _ = store.update_tool_call_status(&result.tool_call_id, "failed").await;
+            write_tool_message_with_retry(
+                store,
+                session_id,
+                &result.tool_call_id,
+                &result.tool_name,
+                &json!({
+                    "tool_call_id": result.tool_call_id,
+                    "name": result.tool_name,
+                    "content": "Tool call was cancelled.",
+                })
+                .to_string(),
+            )
+            .await
+        } else {
+            match &result.result {
+                Ok(envelope) => {
+                    let _ =
+                        store.insert_tool_result(&result.tool_call_id, &envelope.full_result).await;
+                    let _ = store.update_tool_call_status(&result.tool_call_id, "completed").await;
+                    emitter.emit(
+                        "agent-loop-tool-result",
+                        json!({
+                            "session_id": session_id,
+                            "tool_call_id": result.tool_call_id,
+                            "envelope": envelope,
+                        }),
+                    );
+                    write_tool_message_with_retry(
+                        store,
+                        session_id,
+                        &result.tool_call_id,
+                        &result.tool_name,
+                        &json!({
+                            "tool_call_id": result.tool_call_id,
+                            "name": result.tool_name,
+                            "content": envelope.summary,
+                        })
+                        .to_string(),
+                    )
+                    .await
+                },
+                Err(e) => {
+                    let denied = matches!(e, ToolExecutionError::Denied(_));
+                    let _ = store
+                        .update_tool_call_status(
+                            &result.tool_call_id,
+                            if denied { "denied" } else { "failed" },
+                        )
+                        .await;
+                    emitter.emit(
+                        "agent-loop-tool-result",
+                        json!({
+                            "session_id": session_id,
+                            "tool_call_id": result.tool_call_id,
+                            "error": true,
+                            "denied": denied,
+                            "envelope": { "summary": e.to_string() },
+                        }),
+                    );
+                    write_tool_message_with_retry(
+                        store,
+                        session_id,
+                        &result.tool_call_id,
+                        &result.tool_name,
+                        &json!({
+                            "tool_call_id": result.tool_call_id,
+                            "name": result.tool_name,
+                            "content": e.to_string(),
+                        })
+                        .to_string(),
+                    )
+                    .await
+                },
+            }
+        };
+
+        if let Err(e) = write_result {
+            eprintln!(
+                "[agent] Failed to persist tool message for '{}': {} — writing synthetic fallback",
+                result.tool_name, e
+            );
+            emitter.emit(
+                "agent-loop-tool-storage-error",
+                json!({
+                    "session_id": session_id,
+                    "tool_call_id": result.tool_call_id,
+                    "tool_name": result.tool_name,
+                    "error": e,
+                }),
+            );
+            let fallback = json!({
+                "tool_call_id": result.tool_call_id,
+                "name": result.tool_name,
+                "content": format!(
+                    "Tool '{}' result could not be persisted (storage error): {}",
+                    result.tool_name, e
+                ),
+            });
+            let _ = store.write_message(&new_id(), session_id, "tool", &fallback.to_string()).await;
+        }
+    }
+
+    if global_cancelled {
+        Err("cancelled".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cancel helper
+// ---------------------------------------------------------------------------
+
+/// Cancel a running agent loop by sending the cancellation signal.
+pub fn cancel_agent_loop(session_id: &str, cancel_map: &CancelMap) -> Result<(), String> {
+    let tx_opt = {
+        let mut cm = match cancel_map.lock() {
+            Ok(c) => c,
+            Err(e) => return Err(e.to_string()),
+        };
+        cm.remove(session_id)
+    };
+    if let Some(tx) = tx_opt {
+        let _ = tx.send(());
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Confirm helper
+// ---------------------------------------------------------------------------
+
+/// Confirm or deny a pending tool call.
+pub fn confirm_tool_call(
+    tool_call_id: &str,
+    allowed: bool,
+    confirm_map: &ConfirmMap,
+) -> Result<(), String> {
+    let tx_opt = {
+        let mut cm = match confirm_map.lock() {
+            Ok(c) => c,
+            Err(e) => return Err(e.to_string()),
+        };
+        cm.remove(tool_call_id)
+    };
+    if let Some(tx) = tx_opt {
+        let _ = tx.send(allowed);
+        Ok(())
+    } else {
+        Err(format!("no pending confirmation for {}", tool_call_id))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Get tool full result
+// ---------------------------------------------------------------------------
+
+/// Retrieve the full result for a completed tool call.
+/// Apps that need this should implement a custom query in their SessionStore.
+pub async fn get_tool_full_result<S: SessionStore>(
+    _tool_call_id: &str,
+    _store: &S,
+) -> Result<String, String> {
+    Err("get_tool_full_result: not implemented in generic SessionStore; \
+         implement a custom query in your app"
+        .to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Manual compaction
+// ---------------------------------------------------------------------------
+
+/// Manually trigger compaction for a session. Returns context usage info.
+pub async fn compact_agent_session<S: SessionStore, E: EventEmitter>(
+    session_id: &str,
+    settings: &Value,
+    store: &S,
+    emitter: &E,
+) -> Result<Value, String> {
+    let lock = store.compact_lock(session_id);
+    let _guard = lock.lock().await;
+    let outcome = run_compact_manual(session_id, settings, store, emitter).await?;
+    if let Some(info) = outcome {
+        emitter.emit(
+            "agent-loop-summary-injected",
+            json!({
+                "session_id": session_id,
+                "trigger": info.trigger,
+                "pre_tokens": info.pre_tokens,
+                "post_tokens": info.post_tokens,
+                "removed_count": info.removed_count,
+                "fallback_keep_pairs": info.fallback_keep_pairs,
+            }),
+        );
+    }
+    emit_context_usage(store, emitter, session_id, settings).await;
+    let messages = store.load_messages_for_compact(session_id).await?;
+    let visible = filter_to_post_boundary(messages);
+    let spec = resolve_model_spec_for_session(session_id, settings);
+    let decision = evaluate(&visible, &spec);
+    let system_prompt = settings_get_str(settings, "systemPrompt");
+    let tools = settings.get("tools");
+    let used = count_projected_tokens(&visible, system_prompt, tools, &spec);
+    let should_compact = used >= decision.trigger_at;
+    Ok(json!({
+        "session_id": session_id,
+        "used_tokens": used,
+        "capacity": decision.capacity,
+        "context_window": spec.context_window,
+        "output_reserve": spec.output_reserve,
+        "trigger_at": decision.trigger_at,
+        "should_compact": should_compact,
+        "model": spec.model_id,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Context usage query
+// ---------------------------------------------------------------------------
+
+/// Get the current context usage for a session without running compaction.
+pub async fn get_agent_context_usage<S: SessionStore>(
+    session_id: &str,
+    settings: &Value,
+    store: &S,
+) -> Result<Value, String> {
+    let messages = store.load_messages_for_compact(session_id).await?;
+    let visible = filter_to_post_boundary(messages);
+    let spec = resolve_model_spec_for_session(session_id, settings);
+    let decision = evaluate(&visible, &spec);
+    let system_prompt = settings_get_str(settings, "systemPrompt");
+    let tools = settings.get("tools");
+    let used = count_projected_tokens(&visible, system_prompt, tools, &spec);
+    let should_compact = used >= decision.trigger_at;
+    Ok(json!({
+        "session_id": session_id,
+        "used_tokens": used,
+        "capacity": decision.capacity,
+        "context_window": spec.context_window,
+        "output_reserve": spec.output_reserve,
+        "trigger_at": decision.trigger_at,
+        "should_compact": should_compact,
+        "model": spec.model_id,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(id: &str, role: &str, content: &str) -> (String, String, String) {
+        (id.to_string(), role.to_string(), content.to_string())
+    }
+
+    fn assistant_with_tool_calls(
+        id: &str,
+        tool_call_ids: &[(&str, &str)],
+    ) -> (String, String, String) {
+        let calls: Vec<Value> = tool_call_ids
+            .iter()
+            .map(|(cid, name)| {
+                json!({
+                    "id": cid,
+                    "type": "function",
+                    "function": { "name": name, "arguments": "{}" }
+                })
+            })
+            .collect();
+        let content = json!({
+            "content": "Running tools",
+            "tool_calls": calls
+        });
+        msg(id, "assistant", &content.to_string())
+    }
+
+    fn tool_result(id: &str, tool_call_id: &str, content: &str) -> (String, String, String) {
+        let content = json!({
+            "tool_call_id": tool_call_id,
+            "name": "test_tool",
+            "content": content
+        });
+        msg(id, "tool", &content.to_string())
+    }
+
+    #[test]
+    fn test_all_tool_calls_have_results() {
+        let messages = vec![
+            msg("u1", "user", "hello"),
+            assistant_with_tool_calls("a1", &[("call_1", "tool_a"), ("call_2", "tool_b")]),
+            tool_result("t1", "call_1", "result_a"),
+            tool_result("t2", "call_2", "result_b"),
+        ];
+        let out = build_llm_messages(&messages, None);
+        let tool_msgs: Vec<&LlmMessage> = out.iter().filter(|m| m.role == "tool").collect();
+        assert_eq!(tool_msgs.len(), 2);
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(tool_msgs[1].tool_call_id.as_deref(), Some("call_2"));
+    }
+
+    #[test]
+    fn test_partial_tool_results_injects_synthetic_errors() {
+        let messages = vec![
+            msg("u1", "user", "hello"),
+            assistant_with_tool_calls(
+                "a1",
+                &[
+                    ("call_0", "tool_a"),
+                    ("call_1", "tool_b"),
+                    ("call_2", "tool_c"),
+                    ("call_3", "tool_d"),
+                ],
+            ),
+            tool_result("t0", "call_0", "result_a"),
+        ];
+        let out = build_llm_messages(&messages, None);
+        let tool_msgs: Vec<&LlmMessage> = out.iter().filter(|m| m.role == "tool").collect();
+        assert_eq!(tool_msgs.len(), 4);
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call_0"));
+        assert_eq!(tool_msgs[0].text_content, "result_a");
+        assert_eq!(tool_msgs[1].tool_call_id.as_deref(), Some("call_1"));
+        assert!(tool_msgs[1].text_content.contains("did not produce a result"));
+        assert_eq!(tool_msgs[2].tool_call_id.as_deref(), Some("call_2"));
+        assert!(tool_msgs[2].text_content.contains("did not produce a result"));
+        assert_eq!(tool_msgs[3].tool_call_id.as_deref(), Some("call_3"));
+        assert!(tool_msgs[3].text_content.contains("did not produce a result"));
+    }
+
+    #[test]
+    fn test_zero_tool_results_injects_synthetic_errors() {
+        let messages = vec![
+            msg("u1", "user", "hello"),
+            assistant_with_tool_calls("a1", &[("call_1", "tool_a"), ("call_2", "tool_b")]),
+        ];
+        let out = build_llm_messages(&messages, None);
+        let tool_msgs: Vec<&LlmMessage> = out.iter().filter(|m| m.role == "tool").collect();
+        assert_eq!(tool_msgs.len(), 2);
+        assert!(tool_msgs[0].text_content.contains("did not produce a result"));
+        assert!(tool_msgs[1].text_content.contains("did not produce a result"));
+        let assistant_msgs: Vec<&LlmMessage> =
+            out.iter().filter(|m| m.role == "assistant").collect();
+        assert_eq!(assistant_msgs.len(), 1);
+        // With Fix 2, tool_calls are PRESERVED on the assistant message even
+        // when all results are missing — the synthetic tool messages below
+        // reference these tool_call_ids so the API request is valid.
+        assert!(
+            assistant_msgs[0].tool_calls.as_ref().is_some_and(|c| c.len() == 2),
+            "tool_calls must be preserved so synthetic tool messages have matching ids"
+        );
+    }
+
+    #[test]
+    fn test_synthetic_error_includes_tool_name() {
+        let messages = vec![
+            msg("u1", "user", "hello"),
+            assistant_with_tool_calls("a1", &[("call_1", "dbolt__execute_query")]),
+        ];
+        let out = build_llm_messages(&messages, None);
+        let tool_msgs: Vec<&LlmMessage> = out.iter().filter(|m| m.role == "tool").collect();
+        assert_eq!(tool_msgs.len(), 1);
+        assert!(tool_msgs[0].text_content.contains("dbolt__execute_query"));
+    }
+
+    #[test]
+    fn test_assistant_with_content_and_orphaned_tool_calls_kept() {
+        let messages = vec![
+            msg("u1", "user", "hello"),
+            assistant_with_tool_calls("a1", &[("call_1", "tool_a")]),
+        ];
+        let out = build_llm_messages(&messages, None);
+        let assistant_msgs: Vec<&LlmMessage> =
+            out.iter().filter(|m| m.role == "assistant").collect();
+        assert_eq!(assistant_msgs.len(), 1);
+        assert_eq!(assistant_msgs[0].text_content, "Running tools");
+    }
+
+    #[test]
+    fn test_multiple_assistant_rounds_orphans_repaired_with_synthetic() {
+        let messages = vec![
+            msg("u1", "user", "first question"),
+            assistant_with_tool_calls("a1", &[("call_1", "tool_a"), ("call_2", "tool_b")]),
+            tool_result("t1", "call_1", "result_a"),
+            msg("u2", "user", "second question"),
+            assistant_with_tool_calls("a2", &[("call_3", "tool_c")]),
+            tool_result("t2", "call_3", "result_c"),
+        ];
+        let out = build_llm_messages(&messages, None);
+        let tool_msgs: Vec<&LlmMessage> = out.iter().filter(|m| m.role == "tool").collect();
+        assert_eq!(tool_msgs.len(), 3);
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(tool_msgs[0].text_content, "result_a");
+        assert_eq!(tool_msgs[1].tool_call_id.as_deref(), Some("call_2"));
+        assert!(tool_msgs[1].text_content.contains("did not produce a result"));
+        assert_eq!(tool_msgs[2].tool_call_id.as_deref(), Some("call_3"));
+        assert_eq!(tool_msgs[2].text_content, "result_c");
+    }
+
+    #[test]
+    fn test_system_prompt_prepended() {
+        let messages = vec![msg("u1", "user", "hello")];
+        let out = build_llm_messages(&messages, Some("You are a helpful assistant"));
+        assert_eq!(out[0].role, "system");
+        assert_eq!(out[0].text_content, "You are a helpful assistant");
+        assert_eq!(out[1].role, "user");
+    }
+
+    #[test]
+    fn test_broken_session_with_llm_errors_self_heals() {
+        let messages = vec![
+            msg("u1", "user", "create coffee shop tables"),
+            assistant_with_tool_calls(
+                "a1",
+                &[
+                    ("call_0", "dbolt__execute_query"),
+                    ("call_1", "dbolt__execute_query"),
+                    ("call_2", "dbolt__execute_query"),
+                    ("call_3", "dbolt__execute_query"),
+                ],
+            ),
+            tool_result("t0", "call_0", "{\"data\":{\"rows\":[]}}"),
+            msg("e1", "assistant", "LLM HTTP 400 Bad Request: insufficient tool messages"),
+            msg("e2", "assistant", "LLM HTTP 400 Bad Request: insufficient tool messages"),
+            msg("u2", "user", "continue, retry the failed ones"),
+        ];
+        let out = build_llm_messages(&messages, None);
+        let tool_msgs: Vec<&LlmMessage> = out.iter().filter(|m| m.role == "tool").collect();
+        assert_eq!(tool_msgs.len(), 4, "all 4 tool calls must have results");
+        assert_eq!(tool_msgs[0].tool_call_id.as_deref(), Some("call_0"));
+        assert_eq!(tool_msgs[0].text_content, "{\"data\":{\"rows\":[]}}");
+        for (i, tool) in tool_msgs.iter().enumerate().take(4).skip(1) {
+            assert!(
+                tool.text_content.contains("did not produce a result"),
+                "call_{} should have synthetic error",
+                i
+            );
+        }
+        let llm_error_msgs: Vec<&LlmMessage> = out
+            .iter()
+            .filter(|m| m.role == "assistant" && m.text_content.starts_with("LLM HTTP"))
+            .collect();
+        assert_eq!(llm_error_msgs.len(), 0, "LLM HTTP error messages must be filtered");
+    }
+}
+
+#[cfg(all(test, feature = "sqlite-storage"))]
+mod execution_authorization_tests {
+    use super::*;
+    use crate::{
+        storage::{
+            db::{self, AgentDb},
+            session_store::SqliteSessionStore,
+        },
+        tool_executor::{ToolCallPreparation, ToolResultMetadata},
+    };
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    };
+
+    struct Executor {
+        calls: AtomicUsize,
+        renew: bool,
+        deny_after_renew: bool,
+    }
+    #[async_trait::async_trait]
+    impl ToolExecutor for Executor {
+        fn prepare(
+            &self,
+            _: &str,
+            _: &Value,
+            _: &Value,
+            _: &HashMap<String, Value>,
+        ) -> Result<ToolCallPreparation, String> {
+            Ok(ToolCallPreparation {
+                connection_config: json!({"approved":true}),
+                risk_level: None,
+                confirmation_required: Some(true),
+            })
+        }
+        async fn execute(&self, _: &str, _: &Value, _: &Value) -> Result<ToolEnvelope, String> {
+            unreachable!()
+        }
+        async fn execute_checked(
+            &self,
+            _: &str,
+            _: &Value,
+            config: &Value,
+        ) -> Result<ToolEnvelope, ToolExecutionError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.renew && config.get("approved") != Some(&json!(true)) {
+                return Err(ToolExecutionError::ConfirmationRequired);
+            }
+            if !self.renew || self.deny_after_renew {
+                return Err(ToolExecutionError::Denied("Permission revoked".into()));
+            }
+            Ok(ToolEnvelope {
+                summary: "done".into(),
+                full_result: "done".into(),
+                metadata: ToolResultMetadata {
+                    tool_name: "tool".into(),
+                    duration_ms: 0,
+                    truncated: false,
+                },
+            })
+        }
+    }
+    struct Emitter {
+        confirms: ConfirmMap,
+        approve: bool,
+        events: Mutex<Vec<(String, Value)>>,
+    }
+    impl EventEmitter for Emitter {
+        fn emit(&self, event: &str, payload: Value) {
+            self.events.lock().unwrap().push((event.into(), payload.clone()));
+            if event == "agent-loop-tool-call" {
+                assert_eq!(payload["confirmation_required"], true);
+                let tx = self
+                    .confirms
+                    .lock()
+                    .unwrap()
+                    .remove(payload["tool_call_id"].as_str().unwrap())
+                    .unwrap();
+                let _ = tx.send(self.approve);
+            }
+        }
+    }
+    fn setup() -> (AgentDb, SqliteSessionStore, PreparedToolCall) {
+        let db = AgentDb(Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap())));
+        db::migrate(&db).unwrap();
+        db.0.lock().unwrap().execute_batch("INSERT INTO agent_sessions (id,title,created_at,updated_at) VALUES ('chat','Chat',0,0); INSERT INTO agent_messages (id,session_id,role,content,created_at) VALUES ('message','chat','assistant','',0); INSERT INTO agent_tool_calls (id,message_id,session_id,tool_name,arguments,status,created_at) VALUES ('call','message','chat','tool','{}','approved',0);").unwrap();
+        let store = SqliteSessionStore::new(db.clone());
+        let tool = PreparedToolCall {
+            tool_call_id: "call".into(),
+            assistant_message_id: "message".into(),
+            tool_name: "tool".into(),
+            arguments: json!({}),
+            original_config: json!({}),
+            prepared_config: json!({}),
+            parallel_ok: false,
+        };
+        (db, store, tool)
+    }
+    type CaseResult =
+        (Result<ToolEnvelope, ToolExecutionError>, usize, Vec<(String, Value)>, String);
+
+    fn run_case(renew: bool, approve: bool, deny_after_renew: bool) -> CaseResult {
+        let (db, store, tool) = setup();
+        let executor = Executor { calls: AtomicUsize::new(0), renew, deny_after_renew };
+        let confirms = Arc::new(Mutex::new(HashMap::new()));
+        let emitter =
+            Emitter { confirms: confirms.clone(), approve, events: Mutex::new(Vec::new()) };
+        let connections = HashMap::new();
+        let context = ToolExecutionContext {
+            session_id: "chat",
+            emitter: &emitter,
+            tool_executor: &executor,
+            connections: &connections,
+            confirm_map: &confirms,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let result = runtime.block_on(execute_with_retry(&tool, &store, &context));
+        assert!(confirms.lock().unwrap().is_empty());
+        let status = db
+            .0
+            .lock()
+            .unwrap()
+            .query_row("SELECT status FROM agent_tool_calls WHERE id='call'", [], |row| row.get(0))
+            .unwrap();
+        (
+            result,
+            executor.calls.load(Ordering::SeqCst),
+            emitter.events.into_inner().unwrap(),
+            status,
+        )
+    }
+    #[test]
+    fn execution_denial_is_terminal_without_retry_delay_or_confirmation() {
+        let (result, calls, events, _) = run_case(false, false, false);
+        assert!(matches!(result, Err(ToolExecutionError::Denied(_))));
+        assert_eq!(calls, 1);
+        assert!(events.is_empty());
+    }
+    #[test]
+    fn changed_requirements_reconfirm_before_dispatch_without_transport_retry() {
+        let (result, calls, events, status) = run_case(true, true, false);
+        assert!(result.is_ok());
+        assert_eq!(calls, 2);
+        assert_eq!(events.len(), 1);
+        assert_eq!(status, "approved");
+    }
+    #[test]
+    fn rejecting_renewed_confirmation_never_dispatches_again() {
+        let (result, calls, events, status) = run_case(true, false, false);
+        assert!(matches!(result, Err(ToolExecutionError::Denied(_))));
+        assert_eq!(calls, 1);
+        assert_eq!(events.len(), 1);
+        assert_eq!(status, "pending");
+    }
+    #[test]
+    fn renewed_approval_cannot_override_revoked_access() {
+        let (result, calls, events, _) = run_case(true, true, true);
+        assert!(matches!(result, Err(ToolExecutionError::Denied(_))));
+        assert_eq!(calls, 2);
+        assert_eq!(events.len(), 1);
+    }
+    #[test]
+    fn every_parallel_and_sequential_denial_is_persisted_without_retry() {
+        for parallel in [false, true] {
+            let (db, store, mut tool) = setup();
+            db.0.lock().unwrap().execute("INSERT INTO agent_tool_calls (id,message_id,session_id,tool_name,arguments,status,created_at) VALUES ('second','message','chat','tool','{}','approved',0)", []).unwrap();
+            tool.parallel_ok = parallel;
+            let mut second = tool.clone();
+            second.tool_call_id = "second".into();
+            let executor =
+                Executor { calls: AtomicUsize::new(0), renew: false, deny_after_renew: false };
+            let confirms = Arc::new(Mutex::new(HashMap::new()));
+            let emitter = Emitter {
+                confirms: confirms.clone(),
+                approve: false,
+                events: Mutex::new(Vec::new()),
+            };
+            let connections = HashMap::new();
+            let context = ToolExecutionContext {
+                session_id: "chat",
+                emitter: &emitter,
+                tool_executor: &executor,
+                connections: &connections,
+                confirm_map: &confirms,
+            };
+            let (_cancel_tx, mut cancel_rx) = oneshot::channel();
+            let runtime =
+                tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            runtime
+                .block_on(execute_phase2_3(vec![tool, second], &store, &context, &mut cancel_rx))
+                .unwrap();
+            assert_eq!(executor.calls.load(Ordering::SeqCst), 2, "parallel={parallel}");
+            let denied: usize =
+                db.0.lock()
+                    .unwrap()
+                    .query_row(
+                        "SELECT COUNT(*) FROM agent_tool_calls WHERE status='denied'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+            assert_eq!(denied, 2);
+            assert!(emitter
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(event, payload)| event == "agent-loop-tool-result"
+                    && payload["denied"] == true));
+        }
+    }
+
+    struct CancelEmitter {
+        cancel: Mutex<Option<oneshot::Sender<()>>>,
+    }
+    impl EventEmitter for CancelEmitter {
+        fn emit(&self, event: &str, _: Value) {
+            if event == "agent-loop-tool-call" {
+                let _ = self.cancel.lock().unwrap().take().unwrap().send(());
+            }
+        }
+    }
+    #[test]
+    fn cancellation_while_reconfirming_cleans_up_without_dispatch() {
+        let (db, store, tool) = setup();
+        let executor =
+            Executor { calls: AtomicUsize::new(0), renew: true, deny_after_renew: false };
+        let confirms = Arc::new(Mutex::new(HashMap::new()));
+        let connections = HashMap::new();
+        let (cancel_tx, mut cancel_rx) = oneshot::channel();
+        let emitter = CancelEmitter { cancel: Mutex::new(Some(cancel_tx)) };
+        let context = ToolExecutionContext {
+            session_id: "chat",
+            emitter: &emitter,
+            tool_executor: &executor,
+            connections: &connections,
+            confirm_map: &confirms,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let result =
+            runtime.block_on(execute_phase2_3(vec![tool], &store, &context, &mut cancel_rx));
+        assert_eq!(result, Err("cancelled".into()));
+        assert_eq!(executor.calls.load(Ordering::SeqCst), 1);
+        assert!(confirms.lock().unwrap().is_empty());
+        let status: String = db
+            .0
+            .lock()
+            .unwrap()
+            .query_row("SELECT status FROM agent_tool_calls WHERE id='call'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(status, "failed");
+    }
+    struct TransformingHost {
+        inputs: Mutex<Vec<Value>>,
+        calls: AtomicUsize,
+        reject: bool,
+        renewals_before_success: usize,
+    }
+    #[async_trait::async_trait]
+    impl ToolExecutor for TransformingHost {
+        fn prepare(
+            &self,
+            _: &str,
+            _: &Value,
+            config: &Value,
+            _: &HashMap<String, Value>,
+        ) -> Result<ToolCallPreparation, String> {
+            self.inputs.lock().unwrap().push(config.clone());
+            if self.reject {
+                return Err("Host rejected preparation".into());
+            }
+            let target = config
+                .get("raw_target")
+                .ok_or("Expected original config, received transformed context")?;
+            assert!(config.get("prepared_target").is_none());
+            Ok(ToolCallPreparation {
+                connection_config: json!({"prepared_target": target}),
+                risk_level: Some(crate::capabilities::types::RiskLevel::Elevated),
+                confirmation_required: Some(true),
+            })
+        }
+        async fn execute(&self, _: &str, _: &Value, _: &Value) -> Result<ToolEnvelope, String> {
+            unreachable!()
+        }
+        async fn execute_checked(
+            &self,
+            _: &str,
+            _: &Value,
+            config: &Value,
+        ) -> Result<ToolEnvelope, ToolExecutionError> {
+            assert_eq!(config, &json!({"prepared_target":"db"}));
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if call < self.renewals_before_success {
+                return Err(ToolExecutionError::ConfirmationRequired);
+            }
+            Ok(ToolEnvelope {
+                summary: "done".into(),
+                full_result: "done".into(),
+                metadata: ToolResultMetadata {
+                    tool_name: "tool".into(),
+                    duration_ms: 0,
+                    truncated: false,
+                },
+            })
+        }
+    }
+
+    #[test]
+    fn initial_prepare_or_legacy_denial_never_requests_confirmation_or_executes() {
+        for reject_prepare in [true, false] {
+            let (db, store, _) = setup();
+            db.0.lock()
+                .unwrap()
+                .execute("UPDATE agent_tool_calls SET status='pending'", [])
+                .unwrap();
+            let host = TransformingHost {
+                inputs: Mutex::new(Vec::new()),
+                calls: AtomicUsize::new(0),
+                reject: reject_prepare,
+                renewals_before_success: 0,
+            };
+            let confirms = Arc::new(Mutex::new(HashMap::new()));
+            let emitter = Emitter {
+                confirms: confirms.clone(),
+                approve: true,
+                events: Mutex::new(Vec::new()),
+            };
+            let connections = HashMap::new();
+            let context = ToolExecutionContext {
+                session_id: "chat",
+                emitter: &emitter,
+                tool_executor: &host,
+                connections: &connections,
+                confirm_map: &confirms,
+            };
+            let original = json!({"raw_target":"db"});
+            let request = ToolCallRequest {
+                tool_call_id: "call",
+                tool_name: "tool",
+                arguments: &Value::Null,
+                connection_config: &original,
+            };
+            let (_cancel_tx, mut cancel_rx) = oneshot::channel();
+            let runtime =
+                tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            let result = runtime
+                .block_on(prepare_and_confirm(
+                    &request,
+                    &store,
+                    &json!({}),
+                    &context,
+                    &mut cancel_rx,
+                    || !reject_prepare,
+                ))
+                .unwrap();
+            assert!(result.is_none());
+            assert_eq!(host.inputs.lock().unwrap().len(), 1);
+            assert_eq!(host.calls.load(Ordering::SeqCst), 0);
+            assert!(confirms.lock().unwrap().is_empty());
+            let events = emitter.events.lock().unwrap();
+            assert!(!events.iter().any(|(event, _)| event == "agent-loop-tool-call"));
+            assert!(events
+                .iter()
+                .any(|(event, payload)| event == "agent-loop-tool-result"
+                    && payload["denied"] == true));
+            let db = db.0.lock().unwrap();
+            let status: String = db
+                .query_row("SELECT status FROM agent_tool_calls WHERE id='call'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(status, "denied");
+            let message: String = db
+                .query_row("SELECT content FROM agent_messages WHERE role='tool'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            let expected = if reject_prepare {
+                "Host rejected preparation"
+            } else {
+                "denied by server permission policy"
+            };
+            assert!(message.contains(expected));
+        }
+    }
+
+    #[test]
+    fn initial_preparation_and_every_renewal_receive_original_input() {
+        let (_, store, mut tool) = setup();
+        tool.original_config = json!({"raw_target":"db"});
+        let host = TransformingHost {
+            inputs: Mutex::new(Vec::new()),
+            calls: AtomicUsize::new(0),
+            reject: false,
+            renewals_before_success: MAX_CONFIRMATION_RENEWALS,
+        };
+        let confirms = Arc::new(Mutex::new(HashMap::new()));
+        let emitter =
+            Emitter { confirms: confirms.clone(), approve: true, events: Mutex::new(Vec::new()) };
+        let connections = HashMap::new();
+        let context = ToolExecutionContext {
+            session_id: "chat",
+            emitter: &emitter,
+            tool_executor: &host,
+            connections: &connections,
+            confirm_map: &confirms,
+        };
+        let request = ToolCallRequest {
+            tool_call_id: &tool.tool_call_id,
+            tool_name: &tool.tool_name,
+            arguments: &tool.arguments,
+            connection_config: &tool.original_config,
+        };
+        let (_cancel_tx, mut cancel_rx) = oneshot::channel();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let preparation = runtime
+            .block_on(prepare_and_confirm(
+                &request,
+                &store,
+                &json!({}),
+                &context,
+                &mut cancel_rx,
+                || false,
+            ))
+            .unwrap()
+            .unwrap();
+        tool.prepared_config = preparation.connection_config;
+        assert!(runtime.block_on(execute_with_retry(&tool, &store, &context)).is_ok());
+        let expected_attempts = MAX_CONFIRMATION_RENEWALS + 1;
+        assert_eq!(host.calls.load(Ordering::SeqCst), expected_attempts);
+        assert_eq!(*host.inputs.lock().unwrap(), vec![tool.original_config; expected_attempts]);
+        assert_eq!(
+            emitter
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(event, _)| event == "agent-loop-tool-call")
+                .count(),
+            expected_attempts
+        );
+        assert!(confirms.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn repeated_renewals_stop_at_the_limit_and_persist_a_terminal_failure() {
+        let (db, store, mut tool) = setup();
+        tool.original_config = json!({"raw_target":"db"});
+        tool.prepared_config = json!({"prepared_target":"db"});
+        let host = TransformingHost {
+            inputs: Mutex::new(Vec::new()),
+            calls: AtomicUsize::new(0),
+            reject: false,
+            renewals_before_success: usize::MAX,
+        };
+        let confirms = Arc::new(Mutex::new(HashMap::new()));
+        let emitter =
+            Emitter { confirms: confirms.clone(), approve: true, events: Mutex::new(Vec::new()) };
+        let connections = HashMap::new();
+        let context = ToolExecutionContext {
+            session_id: "chat",
+            emitter: &emitter,
+            tool_executor: &host,
+            connections: &connections,
+            confirm_map: &confirms,
+        };
+        let (_cancel_tx, mut cancel_rx) = oneshot::channel();
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(execute_phase2_3(vec![tool], &store, &context, &mut cancel_rx)).unwrap();
+        assert_eq!(host.calls.load(Ordering::SeqCst), MAX_CONFIRMATION_RENEWALS + 1);
+        assert_eq!(host.inputs.lock().unwrap().len(), MAX_CONFIRMATION_RENEWALS);
+        assert!(confirms.lock().unwrap().is_empty());
+        let events = emitter.events.lock().unwrap();
+        assert_eq!(
+            events.iter().filter(|(event, _)| event == "agent-loop-tool-call").count(),
+            MAX_CONFIRMATION_RENEWALS
+        );
+        assert!(!events.iter().any(|(event, _)| event == "agent-loop-tool-retry"));
+        let (_, result) =
+            events.iter().find(|(event, _)| event == "agent-loop-tool-result").unwrap();
+        assert_eq!(result["error"], true);
+        assert_eq!(result["denied"], false);
+        assert!(result["envelope"]["summary"].as_str().unwrap().contains("confirmation renewals"));
+        let status: String = db
+            .0
+            .lock()
+            .unwrap()
+            .query_row("SELECT status FROM agent_tool_calls WHERE id='call'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(status, "failed");
+    }
+}

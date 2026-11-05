@@ -1,6 +1,6 @@
 [package]
 name = "dbolt"
-version = "0.8.7"
+version = "1.0.1"
 description = "DBolt — Free and Open Source agentic cross-platform SQL database GUI client"
 authors = [ "DBolt Contributors" ]
 edition = "2021"
@@ -87,7 +87,7 @@ http = "1"
 log = "0.4"
 futures = "0.3"
 rand = "0.8"
-data-studio-agent = { git = "https://github.com/geek-fun/data-studio-agent.git", tag = "v0.2.0" }
+data-studio-agent = { path = "crates/data-studio-agent" }
 
 # Archive extraction (JRE downloads)
 flate2 = "1.0"

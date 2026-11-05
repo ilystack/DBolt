@@ -1,4 +1,4 @@
-//! Device activation (geekfun#59): registers this machine against the
+//! Device activation: registers this machine against the
 //! account's device ledger at the entitlement-activation point and surfaces
 //! the 5030 "limit reached" payload for the replace flow.
 //!

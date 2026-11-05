@@ -2,7 +2,7 @@ export const ENTITLEMENT_ERROR_TYPE = 'ENTITLEMENT_REQUIRED'
 export const SESSION_REJECTED_ERROR_TYPE = 'SESSION_REJECTED'
 export const SSH_TUNNEL_STRIPPED_ERROR_TYPE = 'SSH_TUNNEL_STRIPPED'
 
-export const UPGRADE_URL = 'https://github.com/dbolt-app/dbolt'
+export const UPGRADE_URL = 'https://github.com/ilystack/DBolt'
 
 export type PaidFeature
   = | 'ai'

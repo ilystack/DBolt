@@ -135,7 +135,7 @@ export const useDeviceStore = defineStore('device', {
           this.activating = false
       }
     },
-    /** Replace the picked device with this machine (geekfun#59 F2). */
+    /** Replace the picked device with this machine. */
     async replaceDevice(deviceId: string): Promise<boolean> {
       const accountStore = useAccountStore()
       const revision = accountStore.sessionRevision

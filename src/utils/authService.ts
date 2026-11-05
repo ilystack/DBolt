@@ -1,13 +1,11 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 
-export const GEEKFUN_BASE_URL = 'https://console.geekfun.club'
+export const DBOLT_BASE_URL = 'https://github.com/ilystack/DBolt'
 
 export async function openLoginUrl(): Promise<void> {
-  const loginUrl = `${GEEKFUN_BASE_URL}/login?source=dbolt`
-  await openUrl(loginUrl)
+  await openUrl(DBOLT_BASE_URL)
 }
 
 export async function openRegisterUrl(): Promise<void> {
-  const registerUrl = `${GEEKFUN_BASE_URL}/register?source=dbolt`
-  await openUrl(registerUrl)
+  await openUrl(`${DBOLT_BASE_URL}/releases`)
 }
