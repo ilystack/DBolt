@@ -51,7 +51,7 @@ const { t } = useI18n()
                       : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
                 ]"
                 :aria-label="item.label"
-                @click="item.id === 'github' ? openUrl('https://github.com/dbolt-app/dbolt') : navigate()"
+                @click="item.id === 'github' ? openUrl('https://github.com/ilystack/DBolt') : navigate()"
               >
                 <ProBadge
                   v-if="showProDots && item.gated"

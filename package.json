@@ -9,10 +9,10 @@
   "homepage": "https://github.com/dbolt-app/dbolt",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dbolt-app/dbolt.git"
+    "url": "https://github.com/ilystack/DBolt.git"
   },
   "bugs": {
-    "url": "https://github.com/dbolt-app/dbolt/issues"
+    "url": "https://github.com/ilystack/DBolt/issues"
   },
   "keywords": [
     "postgresql",
