@@ -1,0 +1,110 @@
+<script setup lang="ts">
+import type { DialogContentEmits, DialogContentProps } from 'radix-vue'
+import type { HTMLAttributes } from 'vue'
+import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  useForwardPropsEmits,
+} from 'radix-vue'
+import { computed } from 'vue'
+import { cn } from '@/lib/utils'
+
+type Props = {
+  class?: HTMLAttributes['class']
+  showClose?: boolean
+} & DialogContentProps
+
+const props = withDefaults(defineProps<Props>(), {
+  class: undefined,
+  showClose: true,
+})
+
+const emits = defineEmits<DialogContentEmits>()
+
+const delegatedProps = computed(() => {
+  const { class: _, showClose: __, ...delegated } = props
+  return delegated
+})
+
+const forwarded = useForwardPropsEmits(delegatedProps, emits)
+</script>
+
+<template>
+  <DialogPortal>
+    <DialogOverlay
+      class="bg-background/80 inset-0 fixed z-50 data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0"
+    />
+    <DialogContent
+      v-bind="forwarded"
+      :class="
+        cn(
+          'fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-3 border border-border bg-background p-4 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] rounded-lg',
+          props.class,
+        )
+      "
+    >
+      <slot />
+
+      <!-- Visually hidden description for accessibility (radix-vue requirement) -->
+      <DialogDescription class="sr-only">
+        Dialog content
+      </DialogDescription>
+
+      <DialogClose v-if="showClose" class="dialog-close-button">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="h-4 w-4"
+        >
+          <path d="M18 6 6 18" />
+          <path d="m6 6 12 12" />
+        </svg>
+        <span class="sr-only">Close</span>
+      </DialogClose>
+    </DialogContent>
+  </DialogPortal>
+</template>
+
+<style scoped>
+.dialog-close-button {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  border-radius: 0.125rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.dialog-close-button:hover {
+  opacity: 1;
+  background: transparent;
+}
+
+.dialog-close-button:focus {
+  outline: none;
+}
+
+.dialog-close-button:focus-visible {
+  outline: 1px solid hsl(var(--ring));
+  outline-offset: 0;
+}
+
+.dialog-close-button:disabled {
+  pointer-events: none;
+}
+</style>

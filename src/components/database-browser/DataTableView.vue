@@ -1,0 +1,1480 @@
+<script setup lang="ts">
+import type { PageSize } from '@/composables/pagination'
+import type { TableViewSubPage } from '@/store'
+import { invoke } from '@tauri-apps/api/core'
+import { save as showSaveDialog } from '@tauri-apps/plugin-dialog'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { PaginationControls } from '@/components/pagination'
+import { Button } from '@/components/ui/button'
+import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
+import { isValidPageSize, MAX_FETCH_PAGE_SIZE, usePagination } from '@/composables/pagination'
+import { useDataGridSort } from '@/composables/useDataGridSort'
+import { useMinLoadingTime } from '@/composables/useMinLoadingTime'
+import { toast } from '@/composables/useNotifications'
+import { useTableSearch } from '@/composables/useTableSearch'
+import { ConnectionStatus, useConnectionStore } from '@/store'
+import { collectSortableColumns, sortRowsByState } from '@/utils/gridSort'
+import {
+  formatTableValue,
+  isTableNullValue,
+  rowsToCsv,
+} from './dataTableHelpers'
+import ForeignKeysTab from './ForeignKeysTab.vue'
+import IndexesTab from './IndexesTab.vue'
+import SchemaTab from './SchemaTab.vue'
+import TriggersTab from './TriggersTab.vue'
+
+type TableDataResult = {
+  columns: string[]
+  columnTypes: string[]
+  rows: Record<string, unknown>[]
+  rowsAffected?: number
+  executionTimeMs?: number
+  truncated?: boolean
+}
+
+type ColumnTypeInfo = {
+  name: string
+  data_type: string
+  is_primary_key: boolean
+  nullable: boolean
+  is_auto_increment: boolean
+}
+
+const props = defineProps<{
+  connectionId: string
+  database: string
+  schema?: string
+  tableName: string
+  initialSubPage?: TableViewSubPage
+}>()
+
+const { t } = useI18n()
+
+// Sub-page navigation
+type SubPage = TableViewSubPage
+const activeSubPage = ref<SubPage>(props.initialSubPage ?? 'data')
+const subPages: { id: SubPage, label: string }[] = [
+  { id: 'data', label: 'Data' },
+  { id: 'schema', label: 'Schema' },
+  { id: 'indexes', label: 'Indexes' },
+  { id: 'foreign_keys', label: 'Foreign Keys' },
+  { id: 'triggers', label: 'Triggers' },
+]
+
+watch(() => props.initialSubPage, (subPage) => {
+  if (subPage)
+    activeSubPage.value = subPage
+})
+
+// Counts reported by the metadata sub-pages, shown in their footer.
+const subPageCounts = ref<Partial<Record<SubPage, number>>>({})
+
+function setSubPageCount(subPage: SubPage, count: number | undefined) {
+  subPageCounts.value = { ...subPageCounts.value, [subPage]: count }
+}
+
+const activeSubPageCountLabel = computed(() => {
+  const count = subPageCounts.value[activeSubPage.value]
+  if (count === undefined)
+    return ''
+  switch (activeSubPage.value) {
+    case 'schema':
+      return t('components.dataTableView.columnsCount', { count })
+    case 'indexes':
+      return t('components.dataTableView.indexesCount', { count })
+    case 'foreign_keys':
+      return t('components.dataTableView.foreignKeysCount', { count })
+    case 'triggers':
+      return t('components.dataTableView.triggersCount', { count })
+    default:
+      return ''
+  }
+})
+
+const filterInput = ref('')
+const appliedFilter = ref('')
+const hiddenColumns = ref<Set<string>>(new Set())
+const showColumnMenu = ref(false)
+
+// ── Search state ──
+const searchTerm = ref('')
+const searchInputRef = ref<HTMLInputElement | null>(null)
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+const searchFilter = ref<string | null>(null) // active WHERE clause from search
+const { isSearching, invokeSearch, cancelPending } = useTableSearch()
+
+// Tracks whether the search input was just blurred by an ESC press,
+// so the next ESC (anywhere) triggers a full clear.
+let escBlurredSearch = false
+
+// Watch searchTerm to trigger debounced search on every keystroke
+watch(searchTerm, () => {
+  onSearchInput()
+})
+
+const data = ref<TableDataResult | null>(null)
+const totalCount = ref(0)
+const { currentPage, pageSize: rowsPerPage, pageCount: totalPages, offset, setPage, setPageSize } = usePagination(totalCount, { maxPageSize: MAX_FETCH_PAGE_SIZE })
+const loading = ref(false)
+const countLoading = ref(false)
+const countAvailable = ref(false)
+const tableScrollRef = ref<HTMLElement | null>(null)
+const error = ref<string | null>(null)
+const executionTimeMs = ref<number | null>(null)
+const columnInfoList = ref<ColumnTypeInfo[]>([])
+const invalidated = ref(false)
+
+// --- Connection state ---
+const connectionStore = useConnectionStore()
+const isReconnecting = ref(false)
+const connectionError = ref<string | null>(null)
+
+// --- Selection state ---
+const selectedRows = ref<Set<number>>(new Set())
+
+const allRowsSelected = computed(() =>
+  (data.value?.rows.length ?? 0) > 0 && selectedRows.value.size === (data.value?.rows.length ?? 0),
+)
+
+function toggleRowSelection(idx: number) {
+  const next = new Set(selectedRows.value)
+  if (next.has(idx))
+    next.delete(idx)
+  else
+    next.add(idx)
+  selectedRows.value = next
+}
+
+function toggleSelectAll() {
+  if (allRowsSelected.value) {
+    selectedRows.value = new Set()
+  }
+  else {
+    selectedRows.value = new Set(data.value?.rows.map((_, i) => i) ?? [])
+  }
+}
+
+// --- Delete state ---
+const deleteDialogOpen = ref(false)
+const deletingRow = ref<Record<string, unknown> | null>(null)
+const isDeleting = ref(false)
+const batchDeleteDialogOpen = ref(false)
+const isBatchDeleting = ref(false)
+
+// --- Edit state ---
+const editDialogOpen = ref(false)
+const editingRow = ref<Record<string, unknown> | null>(null)
+// editForm: col -> { value: string, setNull: boolean }
+const editForm = ref<Record<string, { value: string, setNull: boolean }>>({})
+const editErrors = ref<Record<string, string>>({})
+const isSaving = ref(false)
+
+// --- Export state ---
+const isExporting = ref(false)
+
+const { withMinLoadingTime } = useMinLoadingTime()
+
+const visibleColumns = computed(() =>
+  data.value ? data.value.columns.filter((c: string) => !hiddenColumns.value.has(c)) : [],
+)
+
+const columnTypeMap = computed(() =>
+  Object.fromEntries(columnInfoList.value.map(c => [c.name, c.data_type])),
+)
+
+// ── Client-side sorting (primitive columns only) ──
+// Sorting applies to the rows already fetched for the current page; JSON,
+// array and BLOB columns stay unsortable because they have no total order.
+const sort = useDataGridSort()
+
+const sortColumnTypes = computed(() => {
+  const result = data.value
+  const fromResult = result
+    ? Object.fromEntries(result.columns.map((col, i) => [col, result.columnTypes?.[i] ?? '']))
+    : {}
+  return { ...fromResult, ...columnTypeMap.value }
+})
+
+const sortableColumns = computed(() =>
+  collectSortableColumns(visibleColumns.value, data.value?.rows ?? [], sortColumnTypes.value),
+)
+
+const sortedRows = computed(() =>
+  sortRowsByState(data.value?.rows ?? [], sort.sortState.value, sortColumnTypes.value),
+)
+
+const isSortable = (column: string): boolean => sortableColumns.value.has(column)
+
+function handleHeaderSort(column: string) {
+  if (!isSortable(column))
+    return
+  sort.toggleSort(column)
+}
+
+const columnIsPK = computed(() =>
+  Object.fromEntries(columnInfoList.value.map(c => [c.name, c.is_primary_key])),
+)
+
+const columnNullable = computed(() =>
+  Object.fromEntries(columnInfoList.value.map(c => [c.name, c.nullable])),
+)
+
+const columnIsAutoIncrement = computed(() =>
+  Object.fromEntries(columnInfoList.value.map(c => [c.name, c.is_auto_increment])),
+)
+
+/** PK columns (in order they appear in the result set) */
+const pkColumns = computed(() =>
+  (data.value?.columns ?? []).filter((c: string) => columnIsPK.value[c]),
+)
+
+function extractPkValues(row: Record<string, unknown>): Record<string, unknown> {
+  const cols = pkColumns.value.length > 0 ? pkColumns.value : (data.value?.columns ?? [])
+  return Object.fromEntries(cols.map((col: string) => [col, row[col] ?? null]))
+}
+
+function formatPkSummary(row: Record<string, unknown>): string {
+  const cols = pkColumns.value.length > 0
+    ? pkColumns.value
+    : (data.value?.columns ?? []).slice(0, 3)
+  return cols.length > 0
+    ? cols.map((col: string) => `${col}: ${formatTableValue(row[col])}`).join(', ')
+    : Object.entries(row).slice(0, 2).map(([k, v]) => `${k}: ${formatTableValue(v)}`).join(', ')
+}
+
+const pageStatus = computed(() => {
+  const count = data.value?.rows.length ?? 0
+  if (!countAvailable.value)
+    return t('components.pagination.showingWithoutTotal', { start: count > 0 ? offset.value + 1 : 0, end: offset.value + count })
+  return t('components.dataGrid.status.showing', {
+    start: count > 0 ? offset.value + 1 : 0,
+    end: count > 0 ? Math.min(totalCount.value, offset.value + count) : 0,
+    total: totalCount.value.toLocaleString(),
+  })
+})
+
+const formattedTime = computed(() => {
+  if (executionTimeMs.value === null)
+    return ''
+  return executionTimeMs.value < 1000
+    ? `${executionTimeMs.value}ms`
+    : `${(executionTimeMs.value / 1000).toFixed(2)}s`
+})
+
+async function fetchData() {
+  if (invalidated.value) {
+    return
+  }
+  loading.value = true
+  error.value = null
+
+  try {
+    await withMinLoadingTime(async () => {
+      const result = await invoke<TableDataResult>('get_table_data', {
+        connectionId: props.connectionId,
+        query: {
+          database: props.database || null,
+          table: props.tableName,
+          schema: props.schema ?? null,
+          filter: appliedFilter.value.trim() || null,
+          limit: rowsPerPage.value,
+          offset: offset.value,
+        },
+      })
+      data.value = result
+      executionTimeMs.value = result.executionTimeMs ?? null
+    })
+  }
+  catch (err) {
+    error.value = String(err)
+    data.value = null
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+async function fetchCount() {
+  if (invalidated.value) {
+    return
+  }
+  countLoading.value = true
+  try {
+    const count = await invoke<number>('get_table_count', {
+      connectionId: props.connectionId,
+      database: props.database || null,
+      table: props.tableName,
+      schema: props.schema ?? null,
+      filter: appliedFilter.value.trim() || null,
+    })
+    totalCount.value = count
+    countAvailable.value = true
+  }
+  catch {
+    totalCount.value = 0
+    countAvailable.value = false
+  }
+  finally {
+    countLoading.value = false
+  }
+}
+
+/** Check if connection is active and reconnect if needed */
+async function ensureConnection(): Promise<boolean> {
+  const status = connectionStore.getConnectionStatus(props.connectionId)
+
+  if (status === ConnectionStatus.CONNECTED) {
+    return true
+  }
+
+  // Try to reconnect
+  isReconnecting.value = true
+  connectionError.value = null
+
+  try {
+    await withMinLoadingTime(async () => {
+      await connectionStore.connect(props.connectionId)
+    })
+    isReconnecting.value = false
+    return true
+  }
+  catch (err) {
+    isReconnecting.value = false
+    connectionError.value = err instanceof Error ? err.message : String(err)
+    return false
+  }
+}
+
+async function refresh() {
+  await fetchCount()
+  await fetchData()
+}
+
+async function handleRetry() {
+  connectionError.value = null
+  const connected = await ensureConnection()
+  if (connected) {
+    fetchColumnInfo()
+    refresh()
+  }
+}
+
+async function fetchColumnInfo() {
+  if (invalidated.value) {
+    columnInfoList.value = []
+    return
+  }
+  if (!props.database || !props.tableName) {
+    columnInfoList.value = []
+    return
+  }
+  try {
+    const result = await invoke<ColumnTypeInfo[]>('list_columns', {
+      connectionId: props.connectionId,
+      database: props.database,
+      schema: props.schema ?? null,
+      tableName: props.tableName,
+    })
+    columnInfoList.value = result
+  }
+  catch {
+    columnInfoList.value = []
+  }
+}
+
+function applyFilter() {
+  resolveAppliedFilter()
+  currentPage.value = 1
+  refresh()
+}
+
+function clearFilter() {
+  filterInput.value = ''
+  if (appliedFilter.value !== '') {
+    appliedFilter.value = ''
+    currentPage.value = 1
+    refresh()
+  }
+}
+
+// ── Search handlers ──
+
+/** Called whenever `searchTerm` changes — debounces 300ms then invokes backend. */
+function onSearchInput() {
+  if (searchDebounceTimer)
+    clearTimeout(searchDebounceTimer)
+
+  const term = searchTerm.value.trim()
+  if (!term) {
+    cancelPending()
+    searchFilter.value = null
+    resolveAppliedFilter()
+    currentPage.value = 1
+    refresh()
+    return
+  }
+
+  searchDebounceTimer = setTimeout(async () => {
+    const filter = await invokeSearch(
+      props.connectionId,
+      props.database,
+      props.schema,
+      props.tableName,
+      searchTerm.value,
+    )
+
+    if (filter !== null) {
+      searchFilter.value = filter || null
+      resolveAppliedFilter()
+      currentPage.value = 1
+      refresh()
+    }
+  }, 300)
+}
+
+/**
+ * Resolve `appliedFilter` from search and/or manual filter.
+ *
+ * Priority: search filter overrides manual filter when search is active.
+ */
+function resolveAppliedFilter() {
+  if (searchTerm.value.trim() && searchFilter.value) {
+    // Combine: search AND manual filter (or just search if no manual filter)
+    const manual = filterInput.value.trim()
+    if (manual)
+      appliedFilter.value = `${searchFilter.value} AND (${manual})`
+    else
+      appliedFilter.value = searchFilter.value
+  }
+  else {
+    // No search active — use manual filter only
+    appliedFilter.value = filterInput.value.trim() || ''
+  }
+}
+
+function clearSearch() {
+  searchTerm.value = ''
+  cancelPending()
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+    searchDebounceTimer = null
+  }
+  searchFilter.value = null
+  resolveAppliedFilter()
+  currentPage.value = 1
+  refresh()
+}
+
+function onSearchKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    if (searchTerm.value) {
+      // First ESC with search active: blur input, mark for second-ESC clear
+      escBlurredSearch = true
+      searchInputRef.value?.blur()
+    }
+    else {
+      // No search text: just blur
+      searchInputRef.value?.blur()
+    }
+    e.preventDefault()
+  }
+}
+
+function onSearchFocus() {
+  escBlurredSearch = false
+}
+
+/** Handle ESC key on window — catches the "second ESC" after search input is blurred. */
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && escBlurredSearch) {
+    escBlurredSearch = false
+    clearSearch()
+    e.preventDefault()
+  }
+}
+
+const goToPage = (page: number) => {
+  if (loading.value || countLoading.value || !Number.isSafeInteger(page) || page === currentPage.value)
+    return
+  setPage(page)
+  fetchData()
+}
+
+const changeRowsPerPage = (size: PageSize) => {
+  if (loading.value || countLoading.value || size === rowsPerPage.value || !isValidPageSize(size, false, MAX_FETCH_PAGE_SIZE))
+    return
+  setPageSize(size)
+  fetchData()
+}
+
+function toggleColumn(col: string) {
+  hiddenColumns.value = hiddenColumns.value.has(col)
+    ? new Set([...hiddenColumns.value].filter(c => c !== col))
+    : new Set([...hiddenColumns.value, col])
+}
+
+function formatTimestamp(): string {
+  const d = new Date()
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
+}
+
+async function exportCSV() {
+  if (!data.value)
+    return
+
+  const csv = rowsToCsv(sortedRows.value, visibleColumns.value)
+  const conn = connectionStore.getConnectionById(props.connectionId)
+  const connName = conn?.name || props.connectionId
+  const parts = [connName, props.database]
+  if (props.schema)
+    parts.push(props.schema)
+  parts.push(props.tableName, formatTimestamp())
+  const defaultName = `${parts.join('-')}.csv`
+
+  try {
+    const selectedPath = await showSaveDialog({
+      filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+      defaultPath: defaultName,
+    })
+    if (!selectedPath)
+      return
+
+    isExporting.value = true
+    const filePath = selectedPath.endsWith('.csv') ? selectedPath : `${selectedPath}.csv`
+
+    try {
+      await withMinLoadingTime(async () => {
+        await invoke('write_text_file', { path: filePath, content: csv })
+      })
+      toast.success(t('components.dataTableView.notifications.csvExported'), { description: filePath })
+    }
+    finally {
+      isExporting.value = false
+    }
+  }
+  catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    toast.error(t('components.dataTableView.notifications.exportFailed'), { description: msg })
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = defaultName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+}
+
+function openDeleteDialog(row: Record<string, unknown>) {
+  if (pkColumns.value.length === 0) {
+    toast.warning(t('components.dataTableView.notifications.noPrimaryKey'), {
+      description: t('components.dataTableView.notifications.fallbackAllColumns'),
+    })
+  }
+  deletingRow.value = row
+  deleteDialogOpen.value = true
+}
+
+async function confirmDelete() {
+  const row = deletingRow.value
+  if (!row)
+    return
+  isDeleting.value = true
+  try {
+    await withMinLoadingTime(async () => {
+      await invoke('delete_table_row', {
+        connectionId: props.connectionId,
+        database: props.database ?? null,
+        table: props.tableName,
+        schema: props.schema ?? null,
+        pkValues: extractPkValues(row),
+      })
+    })
+    toast.success(t('components.dataTableView.notifications.rowDeleted'))
+    deleteDialogOpen.value = false
+    deletingRow.value = null
+    await refresh()
+  }
+  catch (err) {
+    toast.error(t('components.dataTableView.notifications.deleteFailed'), {
+      description: err instanceof Error ? err.message : String(err),
+    })
+  }
+  finally {
+    isDeleting.value = false
+  }
+}
+
+async function confirmBatchDelete() {
+  const indices = [...selectedRows.value]
+  if (indices.length === 0 || !data.value)
+    return
+
+  isBatchDeleting.value = true
+  let successCount = 0
+  let failCount = 0
+
+  for (const idx of indices) {
+    const row = sortedRows.value[idx]
+    if (!row || pkColumns.value.length === 0)
+      continue
+
+    try {
+      await invoke('delete_table_row', {
+        connectionId: props.connectionId,
+        database: props.database ?? null,
+        table: props.tableName,
+        schema: props.schema ?? null,
+        pkValues: extractPkValues(row),
+      })
+      successCount++
+    }
+    catch {
+      failCount++
+    }
+  }
+
+  if (failCount === 0) {
+    toast.success(`${successCount} row(s) deleted`)
+  }
+  else {
+    toast.warning(`${successCount} row(s) deleted, ${failCount} failed`)
+  }
+
+  batchDeleteDialogOpen.value = false
+  selectedRows.value = new Set()
+  isBatchDeleting.value = false
+  await refresh()
+}
+
+function rawValueToString(v: unknown): string {
+  if (v === null || v === undefined)
+    return ''
+  if (typeof v === 'object')
+    return JSON.stringify(v)
+  return String(v)
+}
+
+function openEditDialog(row: Record<string, unknown>) {
+  if (pkColumns.value.length === 0) {
+    toast.warning(t('components.dataTableView.notifications.noPrimaryKey'), {
+      description: t('components.dataTableView.notifications.fallbackAllColumns'),
+    })
+  }
+  editingRow.value = row
+  editErrors.value = {}
+  const cols = data.value?.columns ?? []
+  editForm.value = Object.fromEntries(
+    cols.map((col: string) => [
+      col,
+      {
+        value: rawValueToString(row[col]),
+        setNull: row[col] === null || row[col] === undefined,
+      },
+    ]),
+  )
+  editDialogOpen.value = true
+}
+
+function validateEditForm(): boolean {
+  const columns = data.value?.columns ?? []
+  const errors: Record<string, string> = {}
+
+  for (const col of columns) {
+    const field = editForm.value[col]
+    if (!field)
+      continue
+
+    // Skip validation if set to NULL
+    if (field.setNull) {
+      if (!columnNullable.value[col]) {
+        errors[col] = t('components.dataTableView.validation.required')
+      }
+      continue
+    }
+
+    const value = field.value.trim()
+    const type = (columnTypeMap.value[col] ?? '').toLowerCase()
+
+    // Required field check
+    if (value === '' && !columnNullable.value[col]) {
+      errors[col] = t('components.dataTableView.validation.required')
+      continue
+    }
+
+    // Skip empty values for nullable fields
+    if (value === '')
+      continue
+
+    // Type validation
+    if (isNumericType(type)) {
+      if (!isValidNumber(value)) {
+        errors[col] = t('components.dataTableView.validation.invalidNumber')
+        continue
+      }
+    }
+
+    if (type === 'bool' || type === 'boolean') {
+      if (!isValidBoolean(value)) {
+        errors[col] = t('components.dataTableView.validation.invalidBoolean')
+        continue
+      }
+    }
+  }
+
+  editErrors.value = errors
+  return Object.keys(errors).length === 0
+}
+
+function isNumericType(type: string): boolean {
+  return type.includes('int')
+    || type.includes('serial')
+    || type.includes('numeric')
+    || type.includes('decimal')
+    || type.includes('float')
+    || type.includes('double')
+    || type.includes('real')
+    || type.includes('money')
+    || type.includes('number')
+}
+
+function isValidNumber(value: string): boolean {
+  // Allow negative numbers, decimals, scientific notation
+  return /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value) && !Number.isNaN(Number(value))
+}
+
+function isValidBoolean(value: string): boolean {
+  const lower = value.toLowerCase()
+  return ['true', 'false', '1', '0', 't', 'f', 'y', 'n', 'yes', 'no'].includes(lower)
+}
+
+function getEditInputType(col: string): string {
+  const type = (columnTypeMap.value[col] ?? '').toLowerCase()
+  if (isNumericType(type))
+    return 'number'
+  return 'text'
+}
+
+function coerceEditValue(col: string, value: string): unknown {
+  const type = (columnTypeMap.value[col] ?? '').toLowerCase()
+  if (type.includes('int') || type.includes('serial') || type.includes('numeric') || type.includes('decimal') || type.includes('float') || type.includes('double') || type.includes('real') || type.includes('money')) {
+    const n = Number(value)
+    if (!Number.isNaN(n))
+      return n
+  }
+  if (type === 'bool' || type === 'boolean') {
+    if (value.toLowerCase() === 'true')
+      return true
+    if (value.toLowerCase() === 'false')
+      return false
+  }
+  return value
+}
+
+async function confirmEdit() {
+  const row = editingRow.value
+  if (!row)
+    return
+  if (!validateEditForm())
+    return
+
+  isSaving.value = true
+  try {
+    const columns = data.value?.columns ?? []
+    const updates = Object.fromEntries(
+      columns
+        .map((col: string) => {
+          // Skip auto-increment columns - they cannot be updated
+          if (columnIsAutoIncrement.value[col]) {
+            return null
+          }
+          const field = editForm.value[col]
+          return field ? [col, field.setNull ? null : coerceEditValue(col, field.value)] : null
+        })
+        .filter((entry): entry is [string, unknown] => entry !== null),
+    )
+
+    await withMinLoadingTime(async () => {
+      await invoke('update_table_row', {
+        connectionId: props.connectionId,
+        database: props.database ?? null,
+        table: props.tableName,
+        schema: props.schema ?? null,
+        pkValues: extractPkValues(row),
+        updates,
+      })
+    })
+    toast.success(t('components.dataTableView.notifications.rowUpdated'))
+    editDialogOpen.value = false
+    editingRow.value = null
+    await refresh()
+  }
+  catch (err) {
+    toast.error(t('components.dataTableView.notifications.updateFailed'), {
+      description: err instanceof Error ? err.message : String(err),
+    })
+  }
+  finally {
+    isSaving.value = false
+  }
+}
+
+// Clear selection when data changes
+watch(data, () => {
+  selectedRows.value = new Set()
+  if (tableScrollRef.value)
+    tableScrollRef.value.scrollTop = 0
+})
+
+watch([currentPage, rowsPerPage], () => {
+  selectedRows.value = new Set()
+  editDialogOpen.value = false
+  deleteDialogOpen.value = false
+  batchDeleteDialogOpen.value = false
+})
+
+// Sorting reorders positional indices, so the current selection no longer maps
+watch(sort.sortState, () => {
+  selectedRows.value = new Set()
+})
+
+const formatValue = formatTableValue
+const isNullValue = isTableNullValue
+
+onMounted(async () => {
+  document.addEventListener('keydown', onGlobalKeydown)
+  const connected = await ensureConnection()
+  if (connected) {
+    fetchColumnInfo()
+    refresh()
+  }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onGlobalKeydown)
+})
+
+watch(
+  () => [props.connectionId, props.database, props.tableName, props.schema] as const,
+  async ([newConnId, _newDatabase, _newTable, _newSchema], [oldConnId]) => {
+    currentPage.value = 1
+    appliedFilter.value = ''
+    filterInput.value = ''
+    searchTerm.value = ''
+    searchFilter.value = null
+    cancelPending()
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+      searchDebounceTimer = null
+    }
+    hiddenColumns.value = new Set()
+    sort.clearSort()
+    connectionError.value = null
+    subPageCounts.value = {}
+
+    if (newConnId !== oldConnId) {
+      data.value = null
+      totalCount.value = 0
+      columnInfoList.value = []
+      invalidated.value = true
+      return
+    }
+
+    invalidated.value = false
+    const connected = await ensureConnection()
+    if (connected && !invalidated.value) {
+      fetchColumnInfo()
+      refresh()
+    }
+  },
+)
+</script>
+
+<template>
+  <div class="data-table-view flex flex-col min-h-0" @click="showColumnMenu = false">
+    <!-- Sub-page navigation bar -->
+    <div class="border-b bg-muted/30 flex shrink-0">
+      <button
+        v-for="page in subPages"
+        :key="page.id"
+        class="text-xs font-medium px-3 py-1.5 border-b-2 shrink-0 transition-colors"
+        :class="activeSubPage === page.id
+          ? 'border-primary text-foreground'
+          : 'border-transparent text-muted-foreground hover:text-foreground'"
+        @click="activeSubPage = page.id"
+      >
+        {{ page.label }}
+      </button>
+    </div>
+
+    <!-- Data sub-page: Toolbar bar (search + filter + actions) -->
+    <template v-if="activeSubPage === 'data'">
+      <div class="px-3 py-1.5 border-b bg-muted/20 flex shrink-0 gap-1 items-center">
+        <!-- Search input — searches across all columns -->
+        <div class="flex-1 min-w-0 relative">
+          <span class="i-carbon-search text-muted-foreground h-3.5 w-3.5 pointer-events-none left-2 top-1/2 absolute -translate-y-1/2" />
+          <Input
+            ref="searchInputRef"
+            v-model="searchTerm"
+            :placeholder="t('components.dataTableView.searchPlaceholder')"
+            class="text-xs pl-7 pr-7 h-7"
+            @keydown="onSearchKeydown"
+            @focus="onSearchFocus"
+          />
+          <!-- Inline spinner when search is active and waiting for backend -->
+          <div
+            v-if="isSearching"
+            class="text-muted-foreground right-2 top-1/2 absolute -translate-y-1/2"
+          >
+            <span class="i-carbon-loading h-3.5 w-3.5 animate-spin" />
+          </div>
+          <!-- Clear search button (inside input, on the right) -->
+          <button
+            v-if="searchTerm"
+            class="text-muted-foreground rounded flex h-5 w-5 items-center right-1 top-1/2 justify-center absolute hover:bg-accent -translate-y-1/2"
+            :title="t('components.dataTableView.clearSearch')"
+            @click.stop="clearSearch"
+          >
+            <span class="i-carbon-close h-3 w-3" />
+          </button>
+        </div>
+
+        <!-- Filter input -->
+        <div class="flex-1 min-w-0 relative">
+          <span class="i-carbon-filter text-muted-foreground h-3.5 w-3.5 pointer-events-none left-2 top-1/2 absolute -translate-y-1/2" />
+          <Input
+            v-model="filterInput"
+            :placeholder="t('components.dataTableView.filterPlaceholder')"
+            class="text-xs font-mono pl-7 h-7"
+            @keydown.enter="applyFilter"
+          />
+          <!-- Clear filter button (inside input, on the right) -->
+          <button
+            v-if="filterInput || appliedFilter"
+            class="text-muted-foreground rounded flex h-5 w-5 items-center right-1 top-1/2 justify-center absolute hover:bg-accent -translate-y-1/2"
+            :title="t('components.dataTableView.clearFilter')"
+            @click.stop="clearFilter"
+          >
+            <span class="i-carbon-close h-3 w-3" />
+          </button>
+        </div>
+
+        <!-- Refresh button -->
+        <Button
+          variant="ghost"
+          size="icon"
+          class="flex-shrink-0 h-7 w-7"
+          :disabled="loading"
+          :title="t('components.dataTableView.refresh')"
+          @click.stop="refresh"
+        >
+          <span class="i-carbon-renew h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
+        </Button>
+
+        <!-- Column visibility dropdown -->
+        <div class="flex-shrink-0 relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-7 w-7"
+            :title="t('components.dataTableView.columns')"
+            @click.stop="showColumnMenu = !showColumnMenu"
+          >
+            <span class="i-carbon-table-split h-3.5 w-3.5" />
+          </Button>
+
+          <div
+            v-if="showColumnMenu && data && data.columns.length > 0"
+            class="text-popover-foreground mt-1 border rounded-md bg-popover max-h-64 min-w-36 shadow-md right-0 top-full absolute z-50 overflow-auto"
+            @click.stop
+          >
+            <div class="text-xs text-muted-foreground font-semibold p-1 px-2 py-1.5 border-b">
+              {{ t('components.dataTableView.columns') }}
+            </div>
+            <div class="p-1">
+              <button
+                v-for="col in data.columns"
+                :key="col"
+                class="text-sm px-2 py-1 text-left rounded flex gap-2 w-full cursor-pointer items-center hover:bg-accent"
+                @click="toggleColumn(col)"
+              >
+                <span v-if="!hiddenColumns.has(col)" class="i-carbon-checkmark text-primary-text flex-shrink-0 h-3 w-3" />
+                <span v-else class="flex-shrink-0 w-3 inline-block" />
+                <span class="truncate">{{ col }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Delete Selected button -->
+        <Button
+          v-if="selectedRows.size > 0"
+          variant="destructive"
+          size="sm"
+          class="text-xs flex-shrink-0 h-7"
+          @click.stop="batchDeleteDialogOpen = true"
+        >
+          <span class="i-carbon-trash-can mr-1 h-3.5 w-3.5" />
+          Delete Selected ({{ selectedRows.size }})
+        </Button>
+
+        <!-- Export CSV button (current page) -->
+        <Button
+          variant="ghost"
+          size="icon"
+          class="flex-shrink-0 h-7 w-7"
+          :disabled="!data || sortedRows.length === 0 || isExporting"
+          :title="t('components.dataTableView.exportCsv')"
+          @click.stop="exportCSV"
+        >
+          <Spinner v-if="isExporting" size="sm" />
+          <span v-else class="i-carbon-download h-3.5 w-3.5" />
+        </Button>
+
+        <!-- Apply Filters button -->
+        <Button
+          size="sm"
+          class="text-xs flex-shrink-0 h-7"
+          @click.stop="applyFilter"
+        >
+          {{ t('components.dataTableView.applyFilters') }}
+        </Button>
+      </div>
+
+      <!-- Table area -->
+      <div ref="tableScrollRef" class="flex-1 min-h-0 relative overflow-auto">
+        <!-- Connection error state -->
+        <div v-if="connectionError" class="p-4 flex h-full items-center justify-center">
+          <div class="text-center max-w-md">
+            <span class="i-carbon-enter text-muted-foreground mx-auto mb-4 h-12 w-12 block" />
+            <p class="text-sm text-muted-foreground mb-2">
+              {{ t('components.dataTableView.connectionLost') }}
+            </p>
+            <p class="text-xs text-muted-foreground mb-4">
+              {{ connectionError }}
+            </p>
+            <Button size="sm" @click="handleRetry">
+              <span class="i-carbon-renew mr-1.5 h-3.5 w-3.5" />
+              {{ t('components.dataTableView.reconnect') }}
+            </Button>
+          </div>
+        </div>
+
+        <!-- Reconnecting state -->
+        <div v-else-if="isReconnecting" class="p-4 flex h-full items-center justify-center">
+          <div class="text-center">
+            <span class="i-carbon-loading text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
+            <p class="text-sm text-muted-foreground">
+              {{ t('components.dataTableView.reconnecting') }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Loading overlay -->
+        <div
+          v-if="loading"
+          class="bg-background/60 flex items-center inset-0 justify-center absolute z-10"
+        >
+          <div class="text-center">
+            <span class="i-carbon-loading text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
+            <p class="text-sm text-muted-foreground">
+              {{ t('components.dataTableView.loading') }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Error state -->
+        <div v-else-if="error" class="p-4">
+          <div class="p-4 border border-red-200 rounded-md bg-red-50 dark:border-red-800 dark:bg-red-900/20">
+            <div class="flex gap-3 items-start">
+              <span class="i-carbon-error text-red-600 mt-0.5 flex-shrink-0 h-5 w-5 dark:text-red-400" />
+              <div>
+                <p class="text-sm text-red-800 font-medium dark:text-red-200">
+                  {{ t('components.dataTableView.error') }}
+                </p>
+                <p class="text-sm text-red-700 mt-1 dark:text-red-300">
+                  {{ error }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Data table -->
+        <table
+          v-else-if="data && data.columns.length > 0"
+          class="data-table w-full"
+        >
+          <thead>
+            <tr class="border-b">
+              <th class="data-table-header text-center w-16">
+                <div class="flex gap-1 items-center justify-center">
+                  <input
+                    type="checkbox"
+                    class="h-3 w-3 cursor-pointer"
+                    :checked="allRowsSelected"
+                    @change="toggleSelectAll"
+                  >
+                  <span class="text-xs text-muted-foreground font-normal">#</span>
+                </div>
+              </th>
+              <th
+                v-for="col in visibleColumns"
+                :key="col"
+                class="data-table-header text-left"
+              >
+                <button
+                  v-if="isSortable(col)"
+                  class="col-header-cell text-left w-full cursor-pointer"
+                  :title="columnTypeMap[col] ? `${col} · ${columnTypeMap[col]}` : col"
+                  @click="handleHeaderSort(col)"
+                >
+                  <span v-if="columnIsPK[col]" class="i-carbon-key text-amber-500 flex-shrink-0 h-3 w-3" />
+                  <span class="col-name truncate">{{ col }}</span>
+                  <span v-if="columnTypeMap[col]" class="col-type flex-shrink-0">{{ columnTypeMap[col] }}</span>
+                  <span
+                    v-if="sort.getSortDirection(col) === 'ASC'"
+                    class="i-carbon-arrow-up text-foreground flex-shrink-0 h-3 w-3"
+                  />
+                  <span
+                    v-else-if="sort.getSortDirection(col) === 'DESC'"
+                    class="i-carbon-arrow-down text-foreground flex-shrink-0 h-3 w-3"
+                  />
+                  <span
+                    v-else
+                    class="i-carbon-chevron-sort opacity-30 flex-shrink-0 h-3 w-3"
+                  />
+                </button>
+                <div
+                  v-else
+                  class="col-header-cell cursor-default"
+                  :title="$t('components.dataGrid.sort.unsortable')"
+                >
+                  <span v-if="columnIsPK[col]" class="i-carbon-key text-amber-500 flex-shrink-0 h-3 w-3" />
+                  <span class="col-name truncate">{{ col }}</span>
+                  <span v-if="columnTypeMap[col]" class="col-type flex-shrink-0">{{ columnTypeMap[col] }}</span>
+                </div>
+              </th>
+              <!-- Actions header — sticky right, excluded from CSV / column visibility -->
+              <th class="data-table-header data-table-actions-col text-center">
+                {{ t('components.dataTableView.actions') }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(row, i) in sortedRows"
+              :key="i"
+              class="border-b hover:bg-muted/50"
+              :class="{ 'bg-muted/30': selectedRows.has(i) }"
+            >
+              <td class="text-xs px-2 py-1.5 text-center w-16">
+                <div class="flex gap-1 items-center justify-center">
+                  <input
+                    type="checkbox"
+                    class="h-3 w-3 cursor-pointer"
+                    :checked="selectedRows.has(i)"
+                    @change="toggleRowSelection(i)"
+                  >
+                  <span class="text-muted-foreground tabular-nums">{{ offset + i + 1 }}</span>
+                </div>
+              </td>
+              <td
+                v-for="col in visibleColumns"
+                :key="`${i}-${col}`"
+                class="text-sm px-3 py-1.5 max-w-xs truncate"
+                :class="{ 'italic text-muted-foreground': isNullValue(row[col]) }"
+                :title="formatValue(row[col])"
+              >
+                {{ formatValue(row[col]) }}
+              </td>
+              <!-- Actions cell — sticky right -->
+              <td class="data-table-actions-col px-2 py-1">
+                <div class="flex gap-0.5 items-center justify-center">
+                  <!-- Edit button -->
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="text-blue-600 h-6 w-6 dark:text-blue-400"
+                    :title="t('components.dataTableView.editRow')"
+                    @click.stop="openEditDialog(row)"
+                  >
+                    <span class="i-carbon-edit h-3.5 w-3.5" />
+                  </Button>
+                  <!-- Delete button -->
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="text-rose-500 h-6 w-6 dark:text-rose-400 hover:text-red-600 dark:hover:text-red-400"
+                    :title="t('components.dataTableView.deleteRow')"
+                    @click.stop="openDeleteDialog(row)"
+                  >
+                    <span class="i-carbon-trash-can h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Empty state -->
+        <div
+          v-else-if="data && sortedRows.length === 0"
+          class="flex h-full items-center justify-center"
+        >
+          <div class="text-muted-foreground text-center">
+            <span class="i-carbon-table mx-auto mb-2 opacity-50 h-8 w-8 block" />
+            <p class="text-sm">
+              {{ t('components.dataTableView.noRows') }}
+            </p>
+          </div>
+        </div>
+
+        <!-- No data yet -->
+        <div v-else class="flex h-full items-center justify-center">
+          <div class="text-muted-foreground text-center">
+            <span class="i-carbon-loading text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
+          </div>
+        </div>
+      </div>
+
+      <PaginationControls
+        :current-page="currentPage"
+        :page-count="totalPages"
+        :page-size="rowsPerPage"
+        :max-page-size="MAX_FETCH_PAGE_SIZE"
+        :database="props.database"
+        :disabled="loading || countLoading || isReconnecting || !!connectionError || !!error"
+        @page-change="goToPage"
+        @page-size-change="changeRowsPerPage"
+      >
+        <span class="tabular-nums" role="status">{{ pageStatus }}</span>
+        <span v-if="formattedTime">{{ t('components.dataGrid.status.time', { time: formattedTime }) }}</span>
+      </PaginationControls>
+    </template>
+
+    <!-- Schema sub-page -->
+    <SchemaTab
+      v-else-if="activeSubPage === 'schema'"
+      :connection-id="props.connectionId"
+      :database="props.database"
+      :schema="props.schema ?? null"
+      :table-name="props.tableName"
+      class="flex-1"
+      @count-change="setSubPageCount('schema', $event)"
+    />
+
+    <!-- Indexes sub-page -->
+    <IndexesTab
+      v-else-if="activeSubPage === 'indexes'"
+      :connection-id="props.connectionId"
+      :database="props.database"
+      :schema="props.schema ?? null"
+      :table-name="props.tableName"
+      class="flex-1"
+      @count-change="setSubPageCount('indexes', $event)"
+    />
+
+    <!-- Foreign Keys sub-page -->
+    <ForeignKeysTab
+      v-else-if="activeSubPage === 'foreign_keys'"
+      :connection-id="props.connectionId"
+      :database="props.database"
+      :schema="props.schema ?? null"
+      :table-name="props.tableName"
+      class="flex-1"
+      @count-change="setSubPageCount('foreign_keys', $event)"
+    />
+
+    <!-- Triggers sub-page -->
+    <TriggersTab
+      v-else-if="activeSubPage === 'triggers'"
+      :connection-id="props.connectionId"
+      :database="props.database"
+      :schema="props.schema ?? null"
+      :table-name="props.tableName"
+      class="flex-1"
+      @count-change="setSubPageCount('triggers', $event)"
+    />
+
+    <!-- Status footer for metadata sub-pages -->
+    <div
+      v-if="activeSubPage !== 'data'"
+      class="text-xs text-muted-foreground px-3 py-1.5 border-t bg-muted/20 flex shrink-0 gap-3 items-center overflow-hidden"
+    >
+      <span v-if="props.database" class="tabular-nums">
+        {{ t('pages.queries.status.database') }}: {{ props.database }}
+      </span>
+      <span v-if="activeSubPageCountLabel" class="tabular-nums">{{ activeSubPageCountLabel }}</span>
+    </div>
+
+    <!-- ── Delete confirmation dialog ── -->
+    <DestructiveConfirmDialog
+      v-model:open="deleteDialogOpen"
+      :title="t('components.destructiveDialog.deleteRow.title')"
+      :message="t('components.destructiveDialog.deleteRow.message', { count: 1, table: props.tableName })"
+      :detail="t('components.destructiveDialog.deleteRow.detail')"
+      :confirm-label="t('components.destructiveDialog.deleteRow.confirm')"
+      :loading="isDeleting"
+      @confirm="confirmDelete"
+    >
+      <!-- PK summary so user knows exactly which row will be deleted -->
+      <template #default>
+        <div v-if="deletingRow" class="text-xs text-muted-foreground font-mono px-3 py-2 rounded-md bg-muted break-all">
+          {{ formatPkSummary(deletingRow) }}
+        </div>
+      </template>
+    </DestructiveConfirmDialog>
+
+    <!-- ── Batch delete confirmation dialog ── -->
+    <DestructiveConfirmDialog
+      v-model:open="batchDeleteDialogOpen"
+      :title="t('components.destructiveDialog.deleteRow.title')"
+      :message="t('components.destructiveDialog.deleteRow.message', { count: selectedRows.size, table: props.tableName })"
+      :detail="t('components.destructiveDialog.deleteRow.detail')"
+      :confirm-label="t('components.destructiveDialog.deleteRow.confirm')"
+      :loading="isBatchDeleting"
+      @confirm="confirmBatchDelete"
+    />
+
+    <!-- ── Edit row dialog ── -->
+    <Dialog v-model:open="editDialogOpen">
+      <DialogContent class="p-0 flex flex-col gap-0 max-h-[80vh] max-w-lg">
+        <div class="px-6 pb-3 pt-5 border-b">
+          <DialogTitle>{{ t('components.dataTableView.editDialog.title') }}</DialogTitle>
+        </div>
+
+        <!-- Scrollable form area -->
+        <div class="px-6 py-4 flex-1 min-h-0 overflow-y-auto space-y-3">
+          <div
+            v-for="col in (data?.columns ?? [])"
+            :key="col"
+            class="space-y-1"
+          >
+            <div class="flex gap-2 items-center">
+              <!-- Column name, type, and PK icon - inline -->
+              <Label :for="`edit-field-${col}`" class="text-xs font-medium whitespace-nowrap">
+                {{ col }}<span v-if="columnTypeMap[col]" class="text-caption text-muted-foreground font-mono font-normal ml-1">{{ columnTypeMap[col] }}</span><span
+                  v-if="columnIsPK[col]"
+                  class="i-carbon-key text-amber-500 ml-1.5 h-3 w-3 inline-block"
+                />
+              </Label>
+              <div class="flex-1" />
+              <!-- Set to NULL toggle -->
+              <label v-if="!columnIsAutoIncrement[col]" class="text-xs text-muted-foreground flex gap-1 cursor-pointer select-none items-center">
+                <input
+                  type="checkbox"
+                  class="h-3 w-3 cursor-pointer"
+                  :checked="editForm[col]?.setNull"
+                  @change="editForm[col] = { ...editForm[col], setNull: !editForm[col]?.setNull, value: editForm[col]?.value ?? '' }"
+                >
+                NULL
+              </label>
+              <!-- Auto-increment indicator -->
+              <span v-if="columnIsAutoIncrement[col]" class="text-xs text-muted-foreground italic">
+                (auto)
+              </span>
+            </div>
+            <Input
+              :id="`edit-field-${col}`"
+              :type="getEditInputType(col)"
+              :model-value="editForm[col]?.setNull ? '' : (editForm[col]?.value ?? '')"
+              :disabled="editForm[col]?.setNull || columnIsAutoIncrement[col]"
+              :placeholder="editForm[col]?.setNull ? 'NULL' : columnIsAutoIncrement[col] ? 'Auto-generated' : ''"
+              :step="getEditInputType(col) === 'number' ? 'any' : undefined"
+              class="text-xs font-mono h-7"
+              :class="{ 'border-destructive': editErrors[col], 'opacity-60': columnIsAutoIncrement[col] }"
+              @update:model-value="(v) => editForm[col] = { ...editForm[col], value: String(v), setNull: editForm[col]?.setNull ?? false }"
+            />
+            <p v-if="editErrors[col]" class="text-xs text-destructive-text">
+              {{ editErrors[col] }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Footer actions -->
+        <div class="px-6 py-3 border-t flex gap-2 justify-end">
+          <Button variant="outline" size="sm" :disabled="isSaving" @click="editDialogOpen = false">
+            {{ t('common.buttons.cancel') }}
+          </Button>
+          <Button size="sm" :disabled="isSaving" @click="confirmEdit">
+            <Spinner v-if="isSaving" size="sm" class="mr-1.5" />
+            {{ t('common.buttons.save') }}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  </div>
+</template>
+
+<style scoped>
+.data-table {
+  border-collapse: collapse;
+}
+
+.data-table-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: hsl(var(--muted));
+  padding: 0.375rem 0.75rem;
+  font-size: var(--font-size-dense);
+  font-weight: 500;
+  max-width: 200px;
+  min-width: 80px;
+}
+
+/* Sticky actions column — right-pinned, never scrolls away */
+.data-table-actions-col {
+  position: sticky;
+  right: 0;
+  background-color: hsl(var(--muted));
+  z-index: 11;
+  min-width: 72px;
+  width: 72px;
+  white-space: nowrap;
+}
+
+/* In body rows the actions cell background should match the row hover state */
+tr:hover .data-table-actions-col {
+  background-color: hsl(var(--muted));
+}
+
+.col-header-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  overflow: hidden;
+}
+
+.col-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.col-type {
+  font-size: var(--font-size-caption);
+  font-weight: 400;
+  font-family: monospace;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  opacity: 0.8;
+  flex-shrink: 0;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>

@@ -1,0 +1,415 @@
+pub mod api_response;
+pub mod database;
+pub mod download;
+pub mod ssh;
+pub mod transfer;
+
+// Application state management
+pub mod state;
+
+// Connection lifecycle management
+pub mod connection;
+
+// Tauri command handlers
+pub mod commands;
+
+// Menu setup
+pub mod menu;
+
+// Agent / AI modules
+pub mod agent;
+pub mod agent_adapters;
+pub(crate) mod ai_permissions;
+pub mod capabilities;
+pub mod common;
+pub mod db;
+pub mod device_activation;
+pub mod device_identity;
+pub mod entitlement;
+pub mod mcp_bridge;
+pub mod session;
+
+use std::sync::Arc;
+use std::sync::OnceLock;
+use tauri::AppHandle;
+
+/// Global AppHandle, set once during app setup. Allows capability handlers
+/// and other background code to access the Tauri application handle.
+pub static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+/// Global ConnectionGuardian, set once during app setup. Used by query execution
+/// for health checks and by capability handlers for connection quality warnings.
+pub static GUARDIAN: OnceLock<Arc<crate::connection::guardian::ConnectionGuardian>> =
+    OnceLock::new();
+
+use agent::query_history::{add_query_history_entry, load_query_history};
+use agent::session_store::{
+    clear_agent_session_messages, clear_session_confirmation_rules, create_agent_session,
+    delete_agent_session, delete_attached_source, delete_confirmation_rule, load_agent_sessions,
+    load_attached_sources, load_confirmation_rules, load_session_messages,
+    migrate_session_metadata, save_attached_source, save_confirmation_rule, update_session_meta,
+    update_session_status,
+};
+use agent_adapters::{
+    cancel_agent_loop, compact_agent_session, confirm_tool_call, get_agent_context_usage,
+    get_all_tools, get_tool_full_result, list_llm_models, run_agent_loop, run_agent_step,
+    validate_llm_config,
+};
+use capabilities::commands::get_available_tools;
+use data_studio_agent as lib;
+use data_studio_agent::storage;
+
+#[derive(Clone, serde::Serialize)]
+struct AuthPayload {
+    token: String,
+    username: String,
+    email: String,
+    // optional: the console handoff passes them when the account has an
+    // avatar / stable id; older console builds may omit both
+    user_id: Option<String>,
+    avatar: Option<String>,
+}
+
+fn parse_auth_from_url(url: &str) -> Option<AuthPayload> {
+    let url = url::Url::parse(url).ok()?;
+    if url.scheme() != "dbolt" || url.host_str() != Some("auth") {
+        return None;
+    }
+    let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
+    let token = params.get("token")?.to_string();
+    let username = params.get("username")?.to_string();
+    let email = params.get("email")?.to_string();
+    Some(AuthPayload {
+        token,
+        username,
+        email,
+        user_id: params.get("userId").map(|v| v.to_string()),
+        avatar: params.get("avatar").map(|v| v.to_string()),
+    })
+}
+
+/// Deep links that arrive before the frontend has mounted cannot be delivered
+/// via events (Tauri events are not queued) — they are parked here and the
+/// frontend pulls them via `consume_pending_auth` once its listeners are up.
+#[derive(Default)]
+struct PendingAuthState(std::sync::Mutex<Option<AuthPayload>>);
+
+impl PendingAuthState {
+    fn store(&self, payload: AuthPayload) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(payload);
+    }
+
+    /// Take-and-clear so a delivered token can never be replayed.
+    fn consume(&self) -> Option<AuthPayload> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
+
+#[tauri::command]
+fn consume_pending_auth(state: tauri::State<'_, PendingAuthState>) -> Option<AuthPayload> {
+    state.consume()
+}
+
+/// Debug-only: reads a `dbolt://auth` link from `DBOLT_DEV_AUTH_URL` so the
+/// deep-link login can be tested with `npm run tauri dev`, which cannot
+/// receive URL schemes on macOS (schemes are registered per app bundle).
+#[cfg(debug_assertions)]
+fn dev_injected_auth() -> Option<AuthPayload> {
+    let raw = std::env::var("DBOLT_DEV_AUTH_URL").ok()?;
+    let payload = parse_auth_from_url(&raw);
+    if payload.is_none() {
+        eprintln!("[dbolt] DBOLT_DEV_AUTH_URL is set but is not a valid dbolt://auth link");
+    }
+    payload
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    use crate::connection::guardian::ConnectionGuardian;
+    use state::AppState;
+
+    let store = commands::store::Store::new();
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .manage(AppState::new())
+        .manage(store.clone())
+        .setup(move |app| {
+            let handle = app.handle().clone();
+
+            // Store AppHandle globally for capability handlers and agent
+            let _ = APP_HANDLE.set(handle.clone());
+
+            // Pin the SSH known-hosts store to the app data directory
+            ssh::init_store_dir(&app.path().app_data_dir()?);
+
+            // Start connection guardian for health monitoring + auto-reconnect
+            let guardian = Arc::new(ConnectionGuardian::new());
+            let _ = GUARDIAN.set(guardian.clone());
+            tauri::async_runtime::spawn(async move { guardian.run().await });
+
+            tauri::async_runtime::spawn(async move {
+                store.set_app_handle(handle.clone()).await;
+            });
+            menu::create_menu(app)?;
+
+            // Initialize the capability registry
+            data_studio_agent::capabilities::registry::init_registry(&[
+                crate::capabilities::dbolt::register_all,
+                crate::capabilities::sql::register_sql_tools,
+                crate::capabilities::sql_write::register_write_tools,
+                crate::capabilities::dba::register_dba_tools,
+            ]);
+
+            // Initialize agent SQLite database
+            use tauri::Manager;
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
+            let db_path = app_data_dir.join("agent.sqlite");
+            let agent_db = storage::db::open(&db_path)?;
+            storage::db::migrate(&agent_db)?;
+            {
+                let conn = agent_db.0.lock().map_err(|e| e.to_string())?;
+                recover_stuck_sessions_inner(&conn)?;
+            }
+            app.manage(agent_db);
+
+            use std::collections::HashMap;
+            use std::sync::{Arc, Mutex};
+            let confirm_map: lib::traits::ConfirmMap = Arc::new(Mutex::new(HashMap::new()));
+            let cancel_map: lib::traits::CancelMap = Arc::new(Mutex::new(HashMap::new()));
+            app.manage(confirm_map);
+            app.manage(cancel_map);
+            app.manage(crate::mcp_bridge::McpServerHandle::new());
+
+            {
+                let app_data_dir = app
+                    .path()
+                    .app_data_dir()
+                    .map_err(|e| format!("{}", e))?
+                    .to_path_buf();
+                let entitlement_state = crate::entitlement::EntitlementState::load(Some(
+                    app_data_dir.join("entitlement-cache.json"),
+                ));
+                app.manage(entitlement_state);
+                app.manage(crate::device_activation::DeviceIdentityState::load(
+                    app_data_dir.clone(),
+                ));
+                app.manage(crate::session::SessionState::default());
+                // The MCP bridge starts from the entitlement path, never at setup (cache-only).
+            }
+
+            use tauri::{Emitter, Listener};
+
+            app.manage(PendingAuthState::default());
+
+            // macOS cannot route custom URL schemes to a `tauri dev` binary
+            // (schemes are registered per app bundle), so local testing injects
+            // the auth deep link through the environment instead:
+            //   DBOLT_DEV_AUTH_URL='dbolt://auth?token=…' npm run tauri dev
+            #[cfg(debug_assertions)]
+            if let Some(payload) = dev_injected_auth() {
+                eprintln!("[dbolt] auth injected via DBOLT_DEV_AUTH_URL");
+                app.state::<PendingAuthState>().store(payload);
+            }
+
+            // Handle deep links received while the app is already running.
+            // Double-write: the event reaches a loaded frontend, the pending
+            // slot covers the window before its listeners exist.
+            let app_handle = app.handle().clone();
+            app.listen("deep-link://new-url", move |event: tauri::Event| {
+                if let Ok(urls) = serde_json::from_str::<Vec<String>>(event.payload()) {
+                    for url in &urls {
+                        if let Some(payload) = parse_auth_from_url(url) {
+                            app_handle
+                                .state::<PendingAuthState>()
+                                .store(payload.clone());
+                            let _ = app_handle.emit("dbolt://auth", payload);
+                        }
+                    }
+                }
+            });
+
+            // Cold start: the URL arrived via argv before any frontend
+            // listener could exist — park it for the pull above.
+            let pending = app.state::<PendingAuthState>();
+            use tauri_plugin_deep_link::DeepLinkExt;
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                for url in &urls {
+                    if let Some(payload) = parse_auth_from_url(url.as_str()) {
+                        pending.store(payload);
+                    }
+                }
+            }
+
+            // On non-macOS, remove native window decorations BEFORE showing
+            // the window so there is no flash of the native title bar
+            #[cfg(not(target_os = "macos"))]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_decorations(false);
+            }
+
+            // Show the window after full initialization
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+            }
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            crate::ai_permissions::get_ai_permissions,
+            ai_permissions::invocation::get_ai_context,
+            crate::ai_permissions::save_ai_permissions,
+            // SSH profile management + host-key store
+            crate::ssh::commands::list_ssh_profiles,
+            crate::ssh::commands::save_ssh_profile,
+            crate::ssh::commands::delete_ssh_profile,
+            crate::ssh::commands::test_ssh_connection,
+            crate::ssh::commands::list_ssh_config_hosts,
+            crate::ssh::commands::unpin_ssh_host,
+            crate::common::http_client::detect_system_proxy,
+            // Agent commands
+            get_available_tools,
+            run_agent_step,
+            validate_llm_config,
+            list_llm_models,
+            get_all_tools,
+            run_agent_loop,
+            cancel_agent_loop,
+            compact_agent_session,
+            get_agent_context_usage,
+            confirm_tool_call,
+            get_tool_full_result,
+            // Session management
+            load_agent_sessions,
+            create_agent_session,
+            update_session_status,
+            update_session_meta,
+            delete_agent_session,
+            clear_agent_session_messages,
+            load_session_messages,
+            // Confirmation rules
+            load_confirmation_rules,
+            save_confirmation_rule,
+            delete_confirmation_rule,
+            clear_session_confirmation_rules,
+            // Attached sources
+            load_attached_sources,
+            save_attached_source,
+            delete_attached_source,
+            migrate_session_metadata,
+            // Query history
+            load_query_history,
+            add_query_history_entry,
+            // Store management (internal use)
+            commands::store_get,
+            commands::store_set,
+            commands::store_delete,
+            commands::store_clear,
+            // Connection management
+            // JDBC driver management commands
+            commands::check_jre_status,
+            commands::download_jre,
+            commands::remove_jre,
+            commands::check_jre_update,
+            commands::check_driver_update,
+            commands::check_bridge_status,
+            commands::download_bridge_jar,
+            commands::remove_bridge_jar,
+            commands::list_drivers,
+            commands::download_driver,
+            commands::remove_driver,
+            commands::list_tns_aliases,
+            commands::download_jdbc_driver_direct,
+            // Connection management
+            commands::save_connection,
+            commands::list_connections,
+            commands::delete_connection,
+            commands::test_connection,
+            // Connection lifecycle commands
+            commands::connect_server,
+            commands::disconnect_server,
+            commands::get_connection_status,
+            commands::get_connection_quality,
+            // Query execution commands
+            commands::execute_query,
+            commands::execute_sorted_query,
+            commands::cancel_query,
+            commands::explain_query,
+            commands::sql_analysis::analyze_sql_editability_command,
+            // Database browsing commands
+            commands::list_databases,
+            commands::list_schemas,
+            commands::list_tables,
+            commands::list_columns,
+            commands::get_table_info,
+            commands::get_table_data,
+            commands::get_table_count,
+            commands::get_foreign_keys,
+            commands::update_table_row,
+            commands::delete_table_row,
+            // Schema object browsing commands
+            commands::list_views,
+            commands::list_procedures,
+            commands::list_functions,
+            commands::list_triggers,
+            commands::list_indexes,
+            commands::list_foreign_keys,
+            commands::get_object_ddl,
+            commands::drop_object,
+            commands::rename_object,
+            commands::build_table_search_filter,
+            // File operations commands
+            commands::save_query_file,
+            commands::load_query_file,
+            commands::list_saved_queries,
+            commands::delete_query_file,
+            commands::write_text_file,
+            commands::read_saved_queries_metadata,
+            commands::write_saved_queries_metadata,
+            commands::save_query_metadata,
+            commands::probe_database_file,
+            commands::create_database_directory,
+            commands::preview_export_data,
+            commands::execute_export_data,
+            commands::detect_file_format,
+            commands::preview_import_data,
+            commands::execute_import_data,
+            commands::preview_migration_data,
+            commands::execute_migration_data,
+            commands::auto_map_migration_columns,
+            commands::generate_ddl_for_objects,
+            commands::execute_sql_content,
+            crate::consume_pending_auth,
+            crate::entitlement::refresh_entitlement,
+            crate::entitlement::get_entitlement,
+            crate::entitlement::seed_entitlement,
+            crate::entitlement::clear_entitlement,
+            crate::session::rotate_session_now,
+            crate::session::revoke_session,
+            crate::device_activation::activate_device,
+            crate::mcp_bridge::get_mcp_status,
+            crate::mcp_bridge::save_mcp_config,
+            crate::mcp_bridge::save_mcp_policy,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+fn recover_stuck_sessions_inner(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute(
+        "UPDATE agent_sessions SET status = 'idle' WHERE status IN ('running', 'waiting_confirmation')",
+        [],
+    )
+    .map_err(|e| format!("Failed to recover sessions: {}", e))?;
+    Ok(())
+}

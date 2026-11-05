@@ -1,0 +1,138 @@
+import { presetWind4 } from '@unocss/preset-wind4'
+import { defineConfig, presetIcons, transformerDirectives, transformerVariantGroup } from 'unocss'
+import presetAnimations from 'unocss-preset-animations'
+
+export default defineConfig({
+  presets: [
+    presetWind4({
+      preflights: {
+        reset: true,
+        theme: 'on-demand',
+        property: true,
+      },
+    }),
+    presetIcons({
+      scale: 1.2,
+      collections: {
+        'carbon': () => import('@iconify-json/carbon/icons.json').then(i => i.default as Record<string, unknown>),
+        'lucide': () => import('@iconify-json/lucide/icons.json').then(i => i.default as Record<string, unknown>),
+        'simple-icons': () => import('@iconify-json/simple-icons/icons.json').then(i => i.default as Record<string, unknown>),
+      },
+    }),
+    presetAnimations(),
+  ],
+  transformers: [transformerDirectives(), transformerVariantGroup()],
+  content: {
+    filesystem: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
+  },
+  theme: {
+    colors: {
+      border: 'hsl(var(--border))',
+      input: 'hsl(var(--input))',
+      ring: 'hsl(var(--ring))',
+      background: 'hsl(var(--background))',
+      chrome: 'hsl(var(--chrome))',
+      selection: 'hsl(var(--selection))',
+      foreground: 'hsl(var(--foreground))',
+      primary: {
+        DEFAULT: 'hsl(var(--primary))',
+        text: 'hsl(var(--primary-text))',
+        foreground: 'hsl(var(--primary-foreground))',
+      },
+      secondary: {
+        DEFAULT: 'hsl(var(--secondary))',
+        foreground: 'hsl(var(--secondary-foreground))',
+      },
+      destructive: {
+        DEFAULT: 'hsl(var(--destructive))',
+        text: 'hsl(var(--destructive-text))',
+        muted: 'hsl(var(--destructive-muted))',
+        border: 'hsl(var(--destructive-border))',
+        foreground: 'hsl(var(--destructive-foreground))',
+      },
+      success: {
+        DEFAULT: 'hsl(var(--success))',
+        foreground: 'hsl(var(--success-foreground))',
+        muted: 'hsl(var(--success-muted))',
+        border: 'hsl(var(--success-border))',
+      },
+      warning: {
+        DEFAULT: 'hsl(var(--warning))',
+        foreground: 'hsl(var(--warning-foreground))',
+        muted: 'hsl(var(--warning-muted))',
+        border: 'hsl(var(--warning-border))',
+      },
+      muted: {
+        DEFAULT: 'hsl(var(--muted))',
+        foreground: 'hsl(var(--muted-foreground))',
+      },
+      accent: {
+        DEFAULT: 'hsl(var(--accent))',
+        foreground: 'hsl(var(--accent-foreground))',
+      },
+      popover: {
+        DEFAULT: 'hsl(var(--popover))',
+        foreground: 'hsl(var(--popover-foreground))',
+      },
+      card: {
+        DEFAULT: 'hsl(var(--card))',
+        foreground: 'hsl(var(--card-foreground))',
+      },
+    },
+    radius: {
+      lg: 'var(--radius)',
+      md: 'calc(var(--radius) - 2px)',
+      sm: 'calc(var(--radius) - 4px)',
+    },
+    text: {
+      // Semantic type scale (DESIGN.md Typography). preset-wind4 stores font
+      // sizes under theme.text; 12/14/16/20px already exist as xs/sm/base/xl.
+      caption: { fontSize: '11px', lineHeight: '16px' },
+      body: { fontSize: '13px', lineHeight: '20px' },
+    },
+    animation: {
+      keyframes: {
+        'accordion-down': '{from{height:0}to{height:var(--radix-accordion-content-height)}}',
+        'accordion-up': '{from{height:var(--radix-accordion-content-height)}to{height:0}}',
+      },
+      durations: {
+        'accordion-down': '0.2s',
+        'accordion-up': '0.2s',
+      },
+      ease: {
+        'accordion-down': 'ease-out',
+        'accordion-up': 'ease-out',
+      },
+    },
+  },
+  shortcuts: {
+    'flex-center': 'flex items-center justify-center',
+    'flex-col-center': 'flex flex-col items-center justify-center',
+  },
+  safelist: [
+    'bg-primary',
+    'text-primary-foreground',
+    'hover:bg-primary/90',
+    'bg-destructive',
+    'text-destructive-foreground',
+    'hover:bg-destructive/90',
+    'bg-secondary',
+    'text-secondary-foreground',
+    'hover:bg-secondary/80',
+    'bg-accent',
+    'text-accent-foreground',
+    'hover:bg-accent',
+    'hover:text-accent-foreground',
+    'text-primary-text',
+    'bg-popover',
+    'text-popover-foreground',
+    'bg-destructive/10',
+    'text-destructive-text',
+    'hover:bg-destructive/10',
+    'hover:text-destructive-text',
+    'bg-success',
+    'text-success',
+    'border-success-border',
+    'bg-success-muted',
+  ],
+})

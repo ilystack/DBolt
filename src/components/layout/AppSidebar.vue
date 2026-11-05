@@ -1,0 +1,204 @@
+<script setup lang="ts">
+import { openUrl } from '@tauri-apps/plugin-opener'
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { RouterLink, useRoute } from 'vue-router'
+import UserMenu from '@/components/layout/UserMenu.vue'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { ProBadge } from '@/components/upgrade'
+
+const route = useRoute()
+const showProDots = computed(() => false)
+
+const menuItems = [
+  { id: 'connections', label: 'Connections', icon: 'dns', path: '/connections' },
+  // free page — only the ER-diagram action inside it is Ultimate-gated
+  { id: 'queries', label: 'Queries', icon: 'code', path: '/queries' },
+  { id: 'data-studio', label: 'Data Studio', icon: 'smart_toy', path: '/data-studio', gated: false },
+  { id: 'history', label: 'History', icon: 'history', path: '/history' },
+  { id: 'github', label: 'GitHub', icon: 'github', path: '' },
+]
+
+const isActive = (path: string) => route.path === path
+const { t } = useI18n()
+</script>
+
+<template>
+  <aside class="border-r bg-chrome flex flex-shrink-0 flex-col h-full w-14 z-50">
+    <!-- User identity (was the logo; the app mark moved to the title bar) -->
+    <div class="border-b flex h-12 items-center justify-center">
+      <UserMenu />
+    </div>
+
+    <!-- Navigation -->
+    <nav class="px-1.5 py-3 flex-1 overflow-y-auto space-y-1.5">
+      <TooltipProvider>
+        <RouterLink
+          v-for="item in menuItems"
+          :key="item.id"
+          :to="item.path"
+          custom
+          #="{ navigate }"
+        >
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button
+                class="mx-auto rounded-md flex h-9 w-9 cursor-pointer transition-colors items-center justify-center relative" :class="[
+                  item.id === 'github'
+                    ? 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                    : isActive(item.path)
+                      ? 'bg-secondary text-primary-text border border-border shadow-sm'
+                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                ]"
+                :aria-label="item.label"
+                @click="item.id === 'github' ? openUrl('https://github.com/dbolt-app/dbolt') : navigate()"
+              >
+                <ProBadge
+                  v-if="showProDots && item.gated"
+                  size="dot"
+                  class="right-0.5 top-0.5 absolute"
+                />
+                <!-- DNS icon -->
+                <svg
+                  v-if="item.icon === 'dns'"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <ellipse cx="12" cy="5" rx="9" ry="3" />
+                  <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                  <path d="M3 12a9 3 0 0 0 18 0" />
+                </svg>
+
+                <!-- Import/Export icon -->
+                <svg
+                  v-if="item.icon === 'import_export'"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 3v18" />
+                  <path d="m8 7 4-4 4 4" />
+                  <path d="m16 17-4 4-4-4" />
+                </svg>
+
+                <!-- Smart Toy / AI icon -->
+                <svg
+                  v-if="item.icon === 'smart_toy'"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <rect x="3" y="11" width="18" height="10" rx="2" />
+                  <circle cx="12" cy="5" r="2" />
+                  <path d="M12 7v4" />
+                  <line x1="8" y1="16" x2="8" y2="16" />
+                  <line x1="16" y1="16" x2="16" y2="16" />
+                </svg>
+
+                <!-- Code icon -->
+                <svg
+                  v-if="item.icon === 'code'"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+
+                <!-- History icon -->
+                <svg
+                  v-if="item.icon === 'history'"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+
+                <!-- GitHub icon -->
+                <span v-if="item.icon === 'github'" class="i-lucide-github h-5 w-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>{{ item.label }}</p>
+            </TooltipContent>
+          </Tooltip>
+        </RouterLink>
+      </TooltipProvider>
+    </nav>
+
+    <!-- Bottom actions -->
+    <div class="px-2 py-3 border-t space-y-2">
+      <TooltipProvider>
+        <RouterLink to="/settings" custom #="{ navigate }">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <button
+                class="mx-auto rounded-md flex h-9 w-9 cursor-pointer transition-colors items-center justify-center" :class="[
+                  isActive('/settings')
+                    ? 'bg-secondary text-primary-text border border-border shadow-sm'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                ]"
+                :aria-label="t('common.settings')"
+                @click="navigate"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+                  />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>{{ t('common.settings') }}</p>
+            </TooltipContent>
+          </Tooltip>
+        </RouterLink>
+      </TooltipProvider>
+    </div>
+  </aside>
+</template>

@@ -1,0 +1,2066 @@
+//! SQL Server database adapter implementation.
+//!
+//! This module provides a concrete implementation of the `DatabaseAdapter` trait
+//! for Microsoft SQL Server databases using tiberius with connection pooling support.
+
+use crate::database::{
+    adapter::DatabaseAdapter,
+    config::{ConnectionConfig, SslMode},
+    error::{DbError, DbResult},
+    pool::ConnectionPool,
+    types::{
+        ColumnInfo, ConnectionStatus, DatabaseSchema, ForeignKeyInfo, IndexInfo, ObjectInfo,
+        QueryResult, QueryRow, QueryValue, TableInfo, TriggerInfo,
+    },
+};
+use async_trait::async_trait;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use futures::TryStreamExt;
+use rust_decimal::Decimal;
+use sqlparser::{ast::Statement, dialect::MsSqlDialect, parser::Parser};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tiberius::{AuthMethod, Client, Config, EncryptionLevel, QueryItem, Row};
+use tokio::net::TcpStream;
+use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
+use uuid;
+
+fn sqlserver_error_to_db_error(error: tiberius::error::Error) -> DbError {
+    match &error {
+        tiberius::error::Error::Io { .. }
+        | tiberius::error::Error::Tls(_)
+        | tiberius::error::Error::Protocol(_)
+        | tiberius::error::Error::Routing { .. } => DbError::Connection(error.to_string()),
+        _ if error.code() == Some(18456) => DbError::Authentication(error.to_string()),
+        tiberius::error::Error::Server(server) if server.class() >= 20 => {
+            DbError::Connection(error.to_string())
+        }
+        _ => DbError::QueryExecution(error.to_string()),
+    }
+}
+
+/// SQL Server connection wrapper.
+pub struct SqlServerConnection {
+    client: Client<Compat<TcpStream>>,
+}
+
+/// SQL Server connection pool wrapper.
+///
+/// Note: This is a simple implementation that maintains a vector of connections.
+/// For production use, consider using a more sophisticated pooling strategy.
+pub struct SqlServerPool {
+    config: ConnectionConfig,
+    connections: Arc<tokio::sync::Mutex<Vec<SqlServerConnection>>>,
+    max_size: usize,
+}
+
+#[async_trait]
+impl ConnectionPool for SqlServerPool {
+    type Connection = Client<Compat<TcpStream>>;
+
+    async fn get_connection(&self) -> DbResult<Arc<Self::Connection>> {
+        // Note: This is a simplified implementation
+        // A production pool would implement proper connection lifecycle management
+        Err(DbError::UnsupportedOperation(
+            "Direct connection access not supported - use pool methods directly".to_string(),
+        ))
+    }
+
+    async fn return_connection(&self, _connection: Arc<Self::Connection>) -> DbResult<()> {
+        // Connection is automatically returned when dropped
+        Ok(())
+    }
+
+    fn active_connections(&self) -> usize {
+        // Note: This requires async context to lock the mutex
+        // Returning 0 as placeholder
+        0
+    }
+
+    fn idle_connections(&self) -> usize {
+        // Note: This requires async context to lock the mutex
+        // Returning 0 as placeholder
+        0
+    }
+
+    fn max_connections(&self) -> usize {
+        self.max_size
+    }
+
+    async fn close(&self) -> DbResult<()> {
+        let mut connections = self.connections.lock().await;
+        connections.clear();
+        Ok(())
+    }
+
+    async fn health_check(&self) -> DbResult<()> {
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        client
+            .simple_query("SELECT 1")
+            .await
+            .map_err(|e| DbError::PoolError(format!("Health check failed: {}", e)))?
+            .into_results()
+            .await
+            .map_err(|e| DbError::PoolError(format!("Health check query failed: {}", e)))?;
+
+        Ok(())
+    }
+}
+
+impl SqlServerPool {
+    /// Create a new SQL Server pool.
+    pub fn new(config: ConnectionConfig, max_size: usize) -> Self {
+        Self {
+            config,
+            connections: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            max_size,
+        }
+    }
+
+    /// Get a client from the pool or create a new one.
+    async fn get_client(&self) -> DbResult<Arc<tokio::sync::Mutex<Client<Compat<TcpStream>>>>> {
+        let mut connections = self.connections.lock().await;
+
+        if let Some(conn) = connections.pop() {
+            Ok(Arc::new(tokio::sync::Mutex::new(conn.client)))
+        } else {
+            // Create a new connection
+            let client = Self::create_connection(&self.config).await?;
+            Ok(Arc::new(tokio::sync::Mutex::new(client)))
+        }
+    }
+
+    /// Create a new connection to SQL Server.
+    async fn create_connection(config: &ConnectionConfig) -> DbResult<Client<Compat<TcpStream>>> {
+        let mut tiberius_config = Config::new();
+
+        tiberius_config.host(&config.host);
+        tiberius_config.port(config.port);
+
+        if let Some(ref database) = config.database {
+            tiberius_config.database(database);
+        }
+
+        // Configure authentication
+        // Check if Windows Authentication is requested via options
+        let use_windows_auth = config
+            .options
+            .get("use_windows_auth")
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+
+        if use_windows_auth {
+            // Windows Authentication (Integrated Security)
+            // Note: In tiberius 0.12, Windows auth requires domain, username, and password
+            // Windows Authentication
+            // Note: tiberius 0.12 doesn't have native SSPI/Integrated auth
+            // Fall back to SQL Server authentication with Windows credentials
+            tiberius_config.authentication(AuthMethod::sql_server(
+                &config.username,
+                config.password.as_deref().unwrap_or(""),
+            ));
+        } else {
+            // SQL Server Authentication (username/password)
+            tiberius_config.authentication(AuthMethod::sql_server(
+                &config.username,
+                config.password.as_deref().unwrap_or(""),
+            ));
+        }
+
+        // Configure TLS/SSL
+        match config.ssl_mode {
+            SslMode::Disable => {
+                tiberius_config.encryption(EncryptionLevel::NotSupported);
+            }
+            SslMode::Prefer => {
+                tiberius_config.encryption(EncryptionLevel::Off);
+            }
+            SslMode::Require => {
+                tiberius_config.encryption(EncryptionLevel::Required);
+                tiberius_config.trust_cert();
+            }
+            SslMode::VerifyCA | SslMode::VerifyFull => {
+                tiberius_config.encryption(EncryptionLevel::Required);
+            }
+        }
+
+        // Trust server certificate if specified
+        if config.trust_server_certificate {
+            tiberius_config.trust_cert();
+        }
+
+        // Establish TCP connection with optional timeout
+        let connect_timeout = config
+            .options
+            .get("connect_timeout")
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or(Duration::from_secs(30)); // Default 30 second timeout
+
+        let tcp = tokio::time::timeout(
+            connect_timeout,
+            TcpStream::connect(tiberius_config.get_addr()),
+        )
+        .await
+        .map_err(|_| {
+            DbError::Connection(format!("Connection timeout after {:?}", connect_timeout))
+        })?
+        .map_err(|e| DbError::Connection(format!("Failed to connect to SQL Server: {}", e)))?;
+
+        tcp.set_nodelay(true)
+            .map_err(|e| DbError::Connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
+
+        // Connect using tiberius
+        let client = Client::connect(tiberius_config, tcp.compat_write())
+            .await
+            .map_err(|e| DbError::Connection(format!("Failed to authenticate: {}", e)))?;
+
+        Ok(client)
+    }
+}
+
+/// SQL Server database adapter.
+pub struct SqlServerAdapter {
+    pub(crate) config: ConnectionConfig,
+    pool: Option<Arc<SqlServerPool>>,
+    client: Option<Arc<tokio::sync::Mutex<Client<Compat<TcpStream>>>>>,
+}
+
+impl SqlServerAdapter {
+    /// Create a new SQL Server adapter with the given configuration.
+    pub fn new(config: ConnectionConfig) -> Self {
+        Self {
+            config,
+            pool: None,
+            client: None,
+        }
+    }
+
+    /// Create a temporary adapter connected to `db` for cross-database reads.
+    ///
+    /// SQL Server connections are per-database context, so metadata for a
+    /// database other than the one this adapter was opened with requires a
+    /// separate connection.
+    async fn temp_adapter_for_db(&self, db: &str) -> DbResult<Self> {
+        let mut temp_config = self.config.clone();
+        temp_config.database = Some(db.to_string());
+        let mut temp_adapter = SqlServerAdapter::new(temp_config);
+        temp_adapter.connect().await?;
+        Ok(temp_adapter)
+    }
+
+    /// Get the current client connection.
+    async fn get_client(&self) -> DbResult<Arc<tokio::sync::Mutex<Client<Compat<TcpStream>>>>> {
+        if let Some(ref client) = self.client {
+            Ok(client.clone())
+        } else if let Some(ref pool) = self.pool {
+            pool.get_client().await
+        } else {
+            Err(DbError::Connection("Not connected".to_string()))
+        }
+    }
+
+    /// Escape a value interpolated into a single-quoted T-SQL string literal.
+    fn escape_literal(value: &str) -> String {
+        value.replace('\'', "''")
+    }
+
+    fn quote_ident(identifier: &str) -> DbResult<String> {
+        if identifier.is_empty() || identifier.len() > 128 {
+            return Err(DbError::InvalidQuery(format!(
+                "Invalid identifier: '{}'",
+                identifier
+            )));
+        }
+        for part in identifier.split('.') {
+            let trimmed = part.trim_matches(|c| c == '[' || c == ']');
+            let valid = !trimmed.is_empty()
+                && trimmed
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && !trimmed.chars().next().unwrap().is_ascii_digit();
+            if !valid {
+                return Err(DbError::InvalidQuery(format!(
+                    "Invalid identifier: '{}'",
+                    identifier
+                )));
+            }
+        }
+        Ok(identifier
+            .split('.')
+            .map(|part| format!("[{}]", part.trim_matches(|c| c == '[' || c == ']')))
+            .collect::<Vec<_>>()
+            .join("."))
+    }
+
+    fn validate_privilege(privilege: &str) -> DbResult<String> {
+        const PRIVILEGES: &[&str] = &[
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "REFERENCES",
+            "EXECUTE",
+            "ALTER",
+            "CONTROL",
+            "TAKE OWNERSHIP",
+            "VIEW DEFINITION",
+            "ALL",
+            "ALL PRIVILEGES",
+        ];
+        let mut validated = Vec::new();
+        for part in privilege.split(',') {
+            let trimmed = part.trim().to_uppercase();
+            if trimmed.is_empty() || !PRIVILEGES.contains(&trimmed.as_str()) {
+                return Err(DbError::InvalidQuery(format!(
+                    "Unsupported privilege: '{}'. Supported: {}",
+                    part.trim(),
+                    PRIVILEGES.join(", ")
+                )));
+            }
+            validated.push(trimmed);
+        }
+        Ok(validated.join(", "))
+    }
+
+    /// Convert a tiberius Row to QueryRow.
+    fn row_to_query_row(row: &Row) -> DbResult<QueryRow> {
+        let mut query_row = HashMap::new();
+
+        for (idx, column) in row.columns().iter().enumerate() {
+            let name = column.name().to_string();
+            let value = Self::convert_value(row, idx)?;
+            query_row.insert(name, value);
+        }
+
+        Ok(query_row)
+    }
+
+    /// Convert a SQL Server value to QueryValue.
+    fn convert_value(row: &Row, idx: usize) -> DbResult<QueryValue> {
+        // Try boolean
+        if let Ok(Some(v)) = row.try_get::<bool, _>(idx) {
+            return Ok(QueryValue::Bool(v));
+        }
+
+        // Try integers
+        if let Ok(Some(v)) = row.try_get::<i16, _>(idx) {
+            return Ok(QueryValue::Int(v as i64));
+        }
+        if let Ok(Some(v)) = row.try_get::<i32, _>(idx) {
+            return Ok(QueryValue::Int(v as i64));
+        }
+        if let Ok(Some(v)) = row.try_get::<i64, _>(idx) {
+            return Ok(QueryValue::Int(v));
+        }
+
+        // Try floats (also handles some decimal types)
+        if let Ok(Some(v)) = row.try_get::<f32, _>(idx) {
+            return Ok(QueryValue::Float(v as f64));
+        }
+        if let Ok(Some(v)) = row.try_get::<f64, _>(idx) {
+            return Ok(QueryValue::Float(v));
+        }
+
+        // Try Decimal (MSSQL DECIMAL/NUMERIC types)
+        if let Ok(Some(v)) = row.try_get::<Decimal, _>(idx) {
+            return Ok(QueryValue::String(v.to_string()));
+        }
+
+        // Try datetime types (chrono)
+        if let Ok(Some(v)) = row.try_get::<NaiveDateTime, _>(idx) {
+            return Ok(QueryValue::DateTime(v.to_string()));
+        }
+        if let Ok(Some(v)) = row.try_get::<NaiveDate, _>(idx) {
+            return Ok(QueryValue::DateTime(v.to_string()));
+        }
+        if let Ok(Some(v)) = row.try_get::<NaiveTime, _>(idx) {
+            return Ok(QueryValue::DateTime(v.to_string()));
+        }
+
+        // Try string
+        if let Ok(Some(v)) = row.try_get::<&str, _>(idx) {
+            return Ok(QueryValue::String(v.to_string()));
+        }
+
+        // Try binary
+        if let Ok(Some(v)) = row.try_get::<&[u8], _>(idx) {
+            return Ok(QueryValue::Bytes(v.to_vec()));
+        }
+
+        // Try UUID
+        if let Ok(Some(v)) = row.try_get::<uuid::Uuid, _>(idx) {
+            return Ok(QueryValue::String(v.to_string()));
+        }
+
+        // Default to null if nothing matches or value is NULL
+        Ok(QueryValue::Null)
+    }
+}
+
+#[async_trait]
+impl DatabaseAdapter for SqlServerAdapter {
+    type Pool = SqlServerPool;
+
+    async fn connect(&mut self) -> DbResult<()> {
+        // Create connection pool
+        let pool = SqlServerPool::new(
+            self.config.clone(),
+            self.config.pool_config.max_connections as usize,
+        );
+
+        // Test the connection by getting a client
+        let client = pool.get_client().await?;
+
+        // Verify connection works with a simple query
+        {
+            let mut client_guard = client.lock().await;
+            client_guard
+                .simple_query("SELECT 1")
+                .await
+                .map_err(|e| DbError::Connection(format!("Connection test failed: {}", e)))?
+                .into_results()
+                .await
+                .map_err(|e| DbError::Connection(format!("Connection test failed: {}", e)))?;
+        }
+
+        self.client = Some(client);
+        self.pool = Some(Arc::new(pool));
+
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> DbResult<()> {
+        if let Some(pool) = self.pool.take() {
+            pool.close().await?;
+        }
+        self.client = None;
+        Ok(())
+    }
+
+    async fn test_connection(&self) -> DbResult<ConnectionStatus> {
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        // Get server version
+        let version_stream = client
+            .simple_query("SELECT @@VERSION as version")
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let version_result = version_stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let server_version = if let Some(row) = version_result.first() {
+            match Self::convert_value(row, 0)? {
+                QueryValue::String(s) => Some(s),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        // Get current database and user
+        let db_stream = client
+            .simple_query("SELECT DB_NAME() as db, SUSER_SNAME() as username")
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let db_result = db_stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let (current_database, current_user) = if let Some(row) = db_result.first() {
+            let db = match Self::convert_value(row, 0)? {
+                QueryValue::String(s) => Some(s),
+                _ => None,
+            };
+            let username = match Self::convert_value(row, 1)? {
+                QueryValue::String(s) => Some(s),
+                _ => None,
+            };
+            (db, username)
+        } else {
+            (None, None)
+        };
+
+        Ok(ConnectionStatus {
+            is_connected: true,
+            server_version,
+            current_database,
+            current_user,
+            metadata: HashMap::new(),
+        })
+    }
+
+    async fn execute_query(&self, query: &str) -> DbResult<QueryResult> {
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+        let start = Instant::now();
+
+        // Check if we have a query timeout configured
+        let timeout = self
+            .config
+            .options
+            .get("statement_timeout")
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(Duration::from_millis);
+
+        let execute = async {
+            let count_only = Parser::parse_sql(&MsSqlDialect {}, query)
+                .ok()
+                .filter(|statements| statements.len() == 1)
+                .and_then(|statements| statements.into_iter().next())
+                .is_some_and(|statement| match statement {
+                    Statement::Insert(insert) => insert.output.is_none(),
+                    Statement::Update(update) => update.output.is_none(),
+                    Statement::Delete(delete) => delete.output.is_none(),
+                    Statement::Merge(merge) => merge.output.is_none(),
+                    _ => false,
+                });
+            if count_only {
+                let count = client
+                    .execute(query, &[])
+                    .await
+                    .map_err(sqlserver_error_to_db_error)?
+                    .total();
+                return Ok(QueryResult::affected(count));
+            }
+            let mut stream = client
+                .simple_query(query)
+                .await
+                .map_err(sqlserver_error_to_db_error)?;
+            let mut result = QueryResult::affected(0);
+            while let Some(item) = stream
+                .try_next()
+                .await
+                .map_err(sqlserver_error_to_db_error)?
+            {
+                match item {
+                    QueryItem::Metadata(metadata) => {
+                        result = QueryResult::with_columns(
+                            metadata
+                                .columns()
+                                .iter()
+                                .map(|c| c.name().to_string())
+                                .collect(),
+                            metadata
+                                .columns()
+                                .iter()
+                                .map(|c| format!("{:?}", c.column_type()))
+                                .collect(),
+                        );
+                    }
+                    QueryItem::Row(row) => result.add_row(Self::row_to_query_row(&row)?),
+                }
+            }
+            Ok::<_, DbError>(result)
+        };
+        let result = if let Some(duration) = timeout {
+            tokio::time::timeout(duration, execute)
+                .await
+                .map_err(|_| DbError::Timeout(format!("Query timed out after {:?}", duration)))??
+        } else {
+            execute.await?
+        };
+        Ok(result.with_execution_time(start.elapsed().as_millis() as u64))
+    }
+
+    async fn list_databases(&self) -> DbResult<Vec<DatabaseSchema>> {
+        let query = r#"
+            SELECT 
+                name,
+                NULL as description,
+                CASE WHEN name IN ('master', 'tempdb', 'model', 'msdb') THEN 1 ELSE 0 END as is_system
+            FROM sys.databases
+            ORDER BY is_system, name
+        "#;
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let databases = rows
+            .iter()
+            .map(|row| {
+                let name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let description = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+                let is_system = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::Int(i)) => i == 1,
+                    Ok(QueryValue::Bool(b)) => b,
+                    _ => false,
+                };
+
+                DatabaseSchema {
+                    name,
+                    description,
+                    is_system,
+                    metadata: HashMap::new(),
+                }
+            })
+            .collect();
+
+        Ok(databases)
+    }
+
+    async fn list_schemas(&self, database: Option<&str>) -> DbResult<Vec<String>> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self.temp_adapter_for_db(db).await?.list_schemas(None).await;
+            }
+        }
+
+        // SQL Server supports schemas within databases
+        let query = r#"
+            SELECT name
+            FROM sys.schemas
+            WHERE name NOT IN ('db_owner', 'db_accessadmin', 'db_securityadmin', 
+                              'db_ddladmin', 'db_backupoperator', 'db_datareader', 
+                              'db_datawriter', 'db_denydatareader', 'db_denydatawriter',
+                              'sys', 'INFORMATION_SCHEMA')
+            ORDER BY name
+        "#;
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let schemas = rows
+            .iter()
+            .map(|row| match Self::convert_value(row, 0) {
+                Ok(QueryValue::String(s)) => s,
+                _ => String::new(),
+            })
+            .collect();
+
+        Ok(schemas)
+    }
+
+    async fn list_tables(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<TableInfo>> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_tables(None, schema)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT 
+                s.name as schema_name,
+                t.name as table_name,
+                t.type_desc as table_type
+            FROM sys.tables t
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            WHERE s.name = '{}'
+            UNION ALL
+            SELECT 
+                s.name as schema_name,
+                v.name as table_name,
+                'VIEW' as table_type
+            FROM sys.views v
+            INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
+            WHERE s.name = '{}'
+            ORDER BY table_name
+            "#,
+            Self::escape_literal(&schema_filter),
+            Self::escape_literal(&schema_filter)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let tables = rows
+            .iter()
+            .map(|row| {
+                let schema = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+                let name = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let table_type = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+
+                TableInfo {
+                    schema,
+                    name,
+                    table_type,
+                    row_count: None,
+                    size_bytes: None,
+                    description: None,
+                    metadata: HashMap::new(),
+                }
+            })
+            .collect();
+
+        Ok(tables)
+    }
+
+    async fn list_columns(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<ColumnInfo>> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_columns(None, schema, table)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT 
+                c.name as column_name,
+                t.name as data_type,
+                c.is_nullable,
+                CAST(CASE WHEN t.name IN ('nvarchar', 'nchar') AND c.max_length > 0
+                    THEN c.max_length / 2 ELSE c.max_length END AS INT) AS max_length,
+                CAST(c.precision AS INT) AS precision,
+                CAST(c.scale AS INT) AS scale,
+                CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END as is_primary_key,
+                c.is_identity as is_auto_increment,
+                dc.definition as default_value
+            FROM sys.columns c
+            INNER JOIN sys.tables tbl ON c.object_id = tbl.object_id
+            INNER JOIN sys.schemas s ON tbl.schema_id = s.schema_id
+            INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+            LEFT JOIN (
+                SELECT ic.object_id, ic.column_id
+                FROM sys.index_columns ic
+                INNER JOIN sys.indexes i ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                WHERE i.is_primary_key = 1
+            ) pk ON pk.object_id = c.object_id AND pk.column_id = c.column_id
+            LEFT JOIN sys.default_constraints dc ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+            WHERE s.name = '{}' AND tbl.name = '{}'
+            ORDER BY c.column_id
+            "#,
+            Self::escape_literal(&schema_filter),
+            Self::escape_literal(&table)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let columns = rows
+            .iter()
+            .map(|row| {
+                let name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let data_type = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let nullable = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::Bool(b)) => b,
+                    _ => false,
+                };
+                let max_length = match Self::convert_value(row, 3) {
+                    Ok(QueryValue::Int(i)) => Some(i as u32),
+                    _ => None,
+                };
+                let precision = match Self::convert_value(row, 4) {
+                    Ok(QueryValue::Int(i)) => Some(i as u32),
+                    _ => None,
+                };
+                let scale = match Self::convert_value(row, 5) {
+                    Ok(QueryValue::Int(i)) => Some(i as u32),
+                    _ => None,
+                };
+                let is_primary_key = match Self::convert_value(row, 6) {
+                    Ok(QueryValue::Int(i)) => i == 1,
+                    _ => false,
+                };
+                let is_auto_increment = match Self::convert_value(row, 7) {
+                    Ok(QueryValue::Bool(b)) => b,
+                    _ => false,
+                };
+                let default_value = match Self::convert_value(row, 8) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+
+                ColumnInfo {
+                    name,
+                    data_type,
+                    nullable,
+                    default_value,
+                    is_primary_key,
+                    is_auto_increment,
+                    max_length,
+                    precision,
+                    scale,
+                    description: None,
+                    metadata: HashMap::new(),
+                }
+            })
+            .collect();
+
+        Ok(columns)
+    }
+
+    async fn get_table_info(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<TableInfo> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .get_table_info(None, schema, table)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT 
+                s.name as schema_name,
+                t.name as table_name,
+                t.type_desc as table_type,
+                p.rows as row_count,
+                SUM(a.total_pages) * 8 * 1024 as size_bytes
+            FROM sys.tables t
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            INNER JOIN sys.partitions p ON t.object_id = p.object_id
+            INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+            WHERE s.name = '{}' AND t.name = '{}' AND p.index_id IN (0,1)
+            GROUP BY s.name, t.name, t.type_desc, p.rows
+            UNION ALL
+            SELECT 
+                s.name as schema_name,
+                v.name as table_name,
+                'VIEW' as table_type,
+                NULL as row_count,
+                NULL as size_bytes
+            FROM sys.views v
+            INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
+            WHERE s.name = '{}' AND v.name = '{}'
+            "#,
+            Self::escape_literal(&schema_filter),
+            Self::escape_literal(&table),
+            Self::escape_literal(&schema_filter),
+            Self::escape_literal(&table)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        if rows.is_empty() {
+            return Err(DbError::TableNotFound(format!(
+                "Table {}.{} not found",
+                Self::escape_literal(&schema_filter),
+                Self::escape_literal(&table)
+            )));
+        }
+
+        let row = &rows[0];
+        let schema = match Self::convert_value(row, 0) {
+            Ok(QueryValue::String(s)) => Some(s),
+            _ => None,
+        };
+        let name = match Self::convert_value(row, 1) {
+            Ok(QueryValue::String(s)) => s,
+            _ => String::new(),
+        };
+        let table_type = match Self::convert_value(row, 2) {
+            Ok(QueryValue::String(s)) => s,
+            _ => String::new(),
+        };
+        let row_count = match Self::convert_value(row, 3) {
+            Ok(QueryValue::Int(i)) => Some(i as u64),
+            _ => None,
+        };
+        let size_bytes = match Self::convert_value(row, 4) {
+            Ok(QueryValue::Int(i)) => Some(i as u64),
+            _ => None,
+        };
+
+        Ok(TableInfo {
+            schema,
+            name,
+            table_type,
+            row_count,
+            size_bytes,
+            description: None,
+            metadata: HashMap::new(),
+        })
+    }
+
+    async fn get_foreign_keys(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ForeignKeyInfo>> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .get_foreign_keys(None, schema)
+                    .await;
+            }
+        }
+
+        let schema_filter = match schema {
+            Some(s) => format!(
+                "AND OBJECT_SCHEMA_NAME(fk.parent_object_id) = '{}'",
+                s.replace('\'', "''")
+            ),
+            None => String::new(),
+        };
+
+        let sql = format!(
+            r#"
+            SELECT
+                fk.name AS constraint_name,
+                OBJECT_SCHEMA_NAME(fk.parent_object_id) AS source_schema,
+                OBJECT_NAME(fk.parent_object_id) AS source_table,
+                COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS source_column,
+                OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS target_schema,
+                OBJECT_NAME(fk.referenced_object_id) AS target_table,
+                COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS target_column
+            FROM sys.foreign_keys fk
+            JOIN sys.foreign_key_columns fkc
+                ON fk.object_id = fkc.constraint_object_id
+            WHERE 1=1
+            {schema_filter}
+            ORDER BY
+                OBJECT_SCHEMA_NAME(fk.parent_object_id),
+                OBJECT_NAME(fk.parent_object_id),
+                fkc.constraint_column_id
+            "#,
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&sql)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        // Group rows by constraint_name to collect columns and referenced_columns
+        let mut fk_map: HashMap<String, ForeignKeyInfo> = HashMap::new();
+
+        for row in &rows {
+            let constraint_name = match Self::convert_value(row, 0) {
+                Ok(QueryValue::String(s)) => s,
+                _ => continue,
+            };
+            let source_table = match Self::convert_value(row, 2) {
+                Ok(QueryValue::String(s)) => s,
+                _ => String::new(),
+            };
+            let source_column = match Self::convert_value(row, 3) {
+                Ok(QueryValue::String(s)) => s,
+                _ => String::new(),
+            };
+            let target_schema = match Self::convert_value(row, 4) {
+                Ok(QueryValue::String(s)) => s,
+                _ => String::new(),
+            };
+            let target_table = match Self::convert_value(row, 5) {
+                Ok(QueryValue::String(s)) => s,
+                _ => String::new(),
+            };
+            let target_column = match Self::convert_value(row, 6) {
+                Ok(QueryValue::String(s)) => s,
+                _ => String::new(),
+            };
+
+            fk_map
+                .entry(constraint_name.clone())
+                .and_modify(|entry| {
+                    entry.columns.push(source_column.clone());
+                    entry.referenced_columns.push(target_column.clone());
+                })
+                .or_insert_with(|| ForeignKeyInfo {
+                    constraint_name,
+                    source_table,
+                    columns: vec![source_column],
+                    referenced_schema: Some(target_schema),
+                    referenced_table: target_table,
+                    referenced_columns: vec![target_column],
+                    on_update: None,
+                    on_delete: None,
+                });
+        }
+
+        let fks: Vec<ForeignKeyInfo> = fk_map.into_values().collect();
+        Ok(fks)
+    }
+
+    async fn list_views(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ObjectInfo>> {
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_views(None, schema)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT
+                v.name,
+                'VIEW',
+                s.name,
+                OBJECT_DEFINITION(v.object_id)
+            FROM sys.views v
+            INNER JOIN sys.schemas s ON v.schema_id = s.schema_id
+            WHERE s.name = '{}'
+            ORDER BY v.name
+            "#,
+            Self::escape_literal(&schema_filter)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let views = rows
+            .iter()
+            .map(|row| {
+                let name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let object_type = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let schema_name = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let definition = match Self::convert_value(row, 3) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+                let detail = definition.map(|def| {
+                    if def.len() > 100 {
+                        format!("{}...", &def[..100])
+                    } else {
+                        def
+                    }
+                });
+                ObjectInfo {
+                    name,
+                    object_type,
+                    schema: Some(schema_name),
+                    detail,
+                }
+            })
+            .collect();
+
+        Ok(views)
+    }
+
+    async fn list_procedures(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ObjectInfo>> {
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_procedures(None, schema)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT
+                p.name,
+                'PROCEDURE',
+                s.name,
+                ISNULL(STUFF((
+                    SELECT ', ' + par.name + ' ' + TYPE_NAME(par.system_type_id)
+                    FROM sys.parameters par
+                    WHERE par.object_id = p.object_id AND par.parameter_id > 0
+                    ORDER BY par.parameter_id
+                    FOR XML PATH('')
+                ), 1, 2, ''), '')
+            FROM sys.procedures p
+            INNER JOIN sys.schemas s ON p.schema_id = s.schema_id
+            WHERE s.name = '{}'
+            ORDER BY p.name
+            "#,
+            Self::escape_literal(&schema_filter)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let procedures = rows
+            .iter()
+            .map(|row| {
+                let name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let object_type = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let schema_name = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let params = match Self::convert_value(row, 3) {
+                    Ok(QueryValue::String(s)) if !s.is_empty() => Some(format!("({})", s)),
+                    _ => None,
+                };
+                ObjectInfo {
+                    name,
+                    object_type,
+                    schema: Some(schema_name),
+                    detail: params,
+                }
+            })
+            .collect();
+
+        Ok(procedures)
+    }
+
+    async fn list_functions(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ObjectInfo>> {
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_functions(None, schema)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT
+                o.name,
+                'FUNCTION',
+                s.name,
+                ISNULL(STUFF((
+                    SELECT ', ' + par.name + ' ' + TYPE_NAME(par.system_type_id)
+                    FROM sys.parameters par
+                    WHERE par.object_id = o.object_id AND par.parameter_id > 0
+                    ORDER BY par.parameter_id
+                    FOR XML PATH('')
+                ), 1, 2, ''), '')
+            FROM sys.objects o
+            INNER JOIN sys.schemas s ON o.schema_id = s.schema_id
+            WHERE s.name = '{}' AND o.type IN ('FN', 'IF', 'TF', 'FS', 'FT')
+            ORDER BY o.name
+            "#,
+            Self::escape_literal(&schema_filter)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let functions = rows
+            .iter()
+            .map(|row| {
+                let name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let object_type = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let schema_name = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let params = match Self::convert_value(row, 3) {
+                    Ok(QueryValue::String(s)) if !s.is_empty() => Some(format!("({})", s)),
+                    _ => None,
+                };
+                ObjectInfo {
+                    name,
+                    object_type,
+                    schema: Some(schema_name),
+                    detail: params,
+                }
+            })
+            .collect();
+
+        Ok(functions)
+    }
+
+    async fn list_triggers(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<TriggerInfo>> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_triggers(None, schema, table)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT
+                t.name,
+                CASE WHEN t.is_instead_of_trigger = 1 THEN 'INSTEAD OF' ELSE 'AFTER' END,
+                ISNULL(STUFF((
+                    SELECT ', ' + te.type_desc
+                    FROM sys.trigger_events te
+                    WHERE te.object_id = t.object_id
+                    ORDER BY te.type
+                    FOR XML PATH('')
+                ), 1, 2, ''), ''),
+                OBJECT_DEFINITION(t.object_id)
+            FROM sys.triggers t
+            INNER JOIN sys.tables tb ON t.parent_id = tb.object_id
+            INNER JOIN sys.schemas s ON tb.schema_id = s.schema_id
+            WHERE s.name = '{}' AND tb.name = '{}'
+            ORDER BY t.name
+            "#,
+            Self::escape_literal(&schema_filter),
+            Self::escape_literal(&table)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let triggers = rows
+            .iter()
+            .map(|row| {
+                let name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let action_timing = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let event = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let ddl = match Self::convert_value(row, 3) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+                TriggerInfo {
+                    name,
+                    action_timing,
+                    event,
+                    ddl,
+                }
+            })
+            .collect();
+
+        Ok(triggers)
+    }
+
+    async fn list_indexes(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<IndexInfo>> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_indexes(None, schema, table)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT
+                i.name,
+                i.type_desc,
+                i.is_unique,
+                i.is_primary_key,
+                ISNULL(STUFF((
+                    SELECT ', ' + c.name
+                    FROM sys.index_columns ic
+                    INNER JOIN sys.columns c ON ic.column_id = c.column_id AND ic.object_id = c.object_id
+                    WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0
+                    ORDER BY ic.key_ordinal
+                    FOR XML PATH('')
+                ), 1, 2, ''), '')
+            FROM sys.indexes i
+            INNER JOIN sys.tables t ON i.object_id = t.object_id
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            WHERE s.name = '{}' AND t.name = '{}'
+            ORDER BY i.name
+            "#,
+            Self::escape_literal(&schema_filter),
+            Self::escape_literal(&table)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let indexes = rows
+            .iter()
+            .map(|row| {
+                let name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let index_type = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let is_unique = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::Bool(b)) => b,
+                    Ok(QueryValue::Int(i)) => i != 0,
+                    _ => false,
+                };
+                let is_primary = match Self::convert_value(row, 3) {
+                    Ok(QueryValue::Bool(b)) => b,
+                    Ok(QueryValue::Int(i)) => i != 0,
+                    _ => false,
+                };
+                let columns_str = match Self::convert_value(row, 4) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let columns = if columns_str.is_empty() {
+                    Vec::new()
+                } else {
+                    columns_str.split(", ").map(|s| s.to_string()).collect()
+                };
+                IndexInfo {
+                    name,
+                    columns,
+                    index_type,
+                    is_unique,
+                    is_primary,
+                }
+            })
+            .collect();
+
+        Ok(indexes)
+    }
+
+    async fn list_foreign_keys(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<ForeignKeyInfo>> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .list_foreign_keys(None, schema, table)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        let query = format!(
+            r#"
+            SELECT
+                fk.name,
+                OBJECT_SCHEMA_NAME(fk.referenced_object_id),
+                OBJECT_NAME(fk.referenced_object_id),
+                ISNULL(fk.update_referential_action_desc, 'NO ACTION'),
+                ISNULL(fk.delete_referential_action_desc, 'NO ACTION'),
+                ISNULL(STUFF((
+                    SELECT ', ' + COL_NAME(fkc.parent_object_id, fkc.parent_column_id)
+                    FROM sys.foreign_key_columns fkc
+                    WHERE fkc.constraint_object_id = fk.object_id
+                    ORDER BY fkc.constraint_column_id
+                    FOR XML PATH('')
+                ), 1, 2, ''), ''),
+                ISNULL(STUFF((
+                    SELECT ', ' + COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id)
+                    FROM sys.foreign_key_columns fkc
+                    WHERE fkc.constraint_object_id = fk.object_id
+                    ORDER BY fkc.constraint_column_id
+                    FOR XML PATH('')
+                ), 1, 2, ''), '')
+            FROM sys.foreign_keys fk
+            INNER JOIN sys.tables t ON fk.parent_object_id = t.object_id
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            WHERE s.name = '{}' AND t.name = '{}'
+            ORDER BY fk.name
+            "#,
+            Self::escape_literal(&schema_filter),
+            Self::escape_literal(&table)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let foreign_keys = rows
+            .iter()
+            .map(|row| {
+                let constraint_name = match Self::convert_value(row, 0) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let referenced_schema = match Self::convert_value(row, 1) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+                let referenced_table = match Self::convert_value(row, 2) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let on_update = match Self::convert_value(row, 3) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+                let on_delete = match Self::convert_value(row, 4) {
+                    Ok(QueryValue::String(s)) => Some(s),
+                    _ => None,
+                };
+                let columns_str = match Self::convert_value(row, 5) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let ref_columns_str = match Self::convert_value(row, 6) {
+                    Ok(QueryValue::String(s)) => s,
+                    _ => String::new(),
+                };
+                let columns = if columns_str.is_empty() {
+                    Vec::new()
+                } else {
+                    columns_str.split(", ").map(|s| s.to_string()).collect()
+                };
+                let referenced_columns = if ref_columns_str.is_empty() {
+                    Vec::new()
+                } else {
+                    ref_columns_str.split(", ").map(|s| s.to_string()).collect()
+                };
+                ForeignKeyInfo {
+                    constraint_name,
+                    source_table: table.to_string(),
+                    columns,
+                    referenced_schema,
+                    referenced_table,
+                    referenced_columns,
+                    on_update,
+                    on_delete,
+                }
+            })
+            .collect();
+
+        Ok(foreign_keys)
+    }
+
+    async fn get_object_ddl(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        object_name: &str,
+        _object_type: &str,
+    ) -> DbResult<String> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .get_object_ddl(None, schema, object_name, _object_type)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+
+        // OBJECT_ID takes a quoted identifier: bracket each part (doubled
+        // brackets) so hostile metadata can't break out into the DDL lookup.
+        let query = format!(
+            "SELECT OBJECT_DEFINITION(OBJECT_ID(N'{}'))",
+            Self::quote_ident(&format!("{}.{}", schema_filter, object_name))?
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        if let Some(row) = rows.first() {
+            match Self::convert_value(row, 0) {
+                Ok(QueryValue::String(s)) => Ok(s),
+                _ => Err(DbError::DatabaseNotFound(format!(
+                    "DDL not found for {}.{}",
+                    schema_filter, object_name
+                ))),
+            }
+        } else {
+            Err(DbError::DatabaseNotFound(format!(
+                "Object {}.{} not found",
+                schema_filter, object_name
+            )))
+        }
+    }
+
+    async fn drop_object(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        object_name: &str,
+        object_type: &str,
+    ) -> DbResult<()> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .drop_object(None, schema, object_name, object_type)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+        let qualified = Self::quote_ident(&format!("{}.{}", schema_filter, object_name))?;
+
+        let sql = match object_type.to_uppercase().as_str() {
+            "VIEW" => format!("DROP VIEW IF EXISTS {}", qualified),
+            "PROCEDURE" => format!("DROP PROCEDURE IF EXISTS {}", qualified),
+            "FUNCTION" => format!("DROP FUNCTION IF EXISTS {}", qualified),
+            "TABLE" => format!("DROP TABLE IF EXISTS {}", qualified),
+            _ => {
+                return Err(DbError::UnsupportedOperation(format!(
+                    "drop_object not supported for type: {}",
+                    object_type
+                )))
+            }
+        };
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        client
+            .simple_query(&sql)
+            .await
+            .map_err(sqlserver_error_to_db_error)?
+            .into_results()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        Ok(())
+    }
+
+    async fn rename_object(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        object_name: &str,
+        _object_type: &str,
+        new_name: &str,
+    ) -> DbResult<()> {
+        // If a different database is requested, create a temporary connection to it.
+        if let Some(db) = database {
+            if Some(db) != self.config.database.as_deref() {
+                return self
+                    .temp_adapter_for_db(db)
+                    .await?
+                    .rename_object(None, schema, object_name, _object_type, new_name)
+                    .await;
+            }
+        }
+
+        let schema_filter = schema.unwrap_or("dbo");
+        let qualified = format!("{}.{}", schema_filter, object_name);
+
+        let sql = format!(
+            "EXEC sp_rename N'{}', N'{}'",
+            Self::escape_literal(&qualified),
+            Self::escape_literal(new_name)
+        );
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        client
+            .simple_query(&sql)
+            .await
+            .map_err(sqlserver_error_to_db_error)?
+            .into_results()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        Ok(())
+    }
+
+    async fn list_sessions(&self, _database: Option<&str>) -> DbResult<Vec<serde_json::Value>> {
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let stream = client
+            .simple_query(
+                "SELECT session_id, login_name, database_id, status, login_time \
+                 FROM sys.dm_exec_sessions ORDER BY session_id",
+            )
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let sessions = rows
+            .iter()
+            .map(|row| {
+                let session_id = row.try_get::<i16, _>(0).ok().flatten();
+                let login_name = row
+                    .try_get::<&str, _>(1)
+                    .ok()
+                    .flatten()
+                    .map(|s| s.to_string());
+                let database_id = row.try_get::<i16, _>(2).ok().flatten();
+                let status = row
+                    .try_get::<&str, _>(3)
+                    .ok()
+                    .flatten()
+                    .map(|s| s.to_string());
+                let login_time = row
+                    .try_get::<NaiveDateTime, _>(4)
+                    .ok()
+                    .flatten()
+                    .map(|d| d.to_string());
+                serde_json::json!({
+                    "session_id": session_id,
+                    "login_name": login_name,
+                    "database_id": database_id,
+                    "status": status,
+                    "login_time": login_time,
+                })
+            })
+            .collect();
+
+        Ok(sessions)
+    }
+
+    async fn kill_session(&self, session_id: &str) -> DbResult<()> {
+        let id: u16 = session_id.parse().map_err(|_| {
+            DbError::InvalidQuery(format!(
+                "Invalid session id '{}': SQL Server session ids are numeric",
+                session_id
+            ))
+        })?;
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        client
+            .simple_query(&format!("KILL {}", id))
+            .await
+            .map_err(sqlserver_error_to_db_error)?
+            .into_results()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        Ok(())
+    }
+
+    async fn get_slow_queries(
+        &self,
+        _database: Option<&str>,
+        limit: Option<u32>,
+    ) -> DbResult<Vec<serde_json::Value>> {
+        let limit = limit.unwrap_or(20);
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        let query = format!(
+            "SELECT TOP ({}) \
+                 qs.total_elapsed_time / 1000000.0 AS elapsed_seconds, \
+                 qs.execution_count, \
+                 qs.last_execution_time, \
+                 SUBSTRING(st.text, (qs.statement_start_offset / 2) + 1, \
+                     ((CASE qs.statement_end_offset \
+                         WHEN -1 THEN DATALENGTH(st.text) \
+                         ELSE qs.statement_end_offset END - qs.statement_start_offset) / 2) + 1) AS query_text \
+             FROM sys.dm_exec_query_stats qs \
+             CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st \
+             ORDER BY qs.total_elapsed_time DESC",
+            limit
+        );
+
+        let stream = client
+            .simple_query(&query)
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let rows = stream
+            .into_first_result()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        let slow = rows
+            .iter()
+            .map(|row| {
+                let elapsed_seconds = row.try_get::<f64, _>(0).ok().flatten();
+                let execution_count = row.try_get::<i64, _>(1).ok().flatten();
+                let last_execution_time = row
+                    .try_get::<NaiveDateTime, _>(2)
+                    .ok()
+                    .flatten()
+                    .map(|d| d.to_string());
+                let query_text = row
+                    .try_get::<&str, _>(3)
+                    .ok()
+                    .flatten()
+                    .map(|s| s.to_string());
+                serde_json::json!({
+                    "elapsed_seconds": elapsed_seconds,
+                    "execution_count": execution_count,
+                    "last_execution_time": last_execution_time,
+                    "query_text": query_text,
+                })
+            })
+            .collect();
+
+        Ok(slow)
+    }
+
+    async fn grant_privilege(&self, privilege: &str, object: &str, grantee: &str) -> DbResult<()> {
+        let privs = Self::validate_privilege(privilege)?;
+        let obj = Self::quote_ident(object)?;
+        let grantee = Self::quote_ident(grantee)?;
+        let sql = format!("GRANT {} ON {} TO {}", privs, obj, grantee);
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        client
+            .simple_query(&sql)
+            .await
+            .map_err(sqlserver_error_to_db_error)?
+            .into_results()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        Ok(())
+    }
+
+    async fn revoke_privilege(&self, privilege: &str, object: &str, grantee: &str) -> DbResult<()> {
+        let privs = Self::validate_privilege(privilege)?;
+        let obj = Self::quote_ident(object)?;
+        let grantee = Self::quote_ident(grantee)?;
+        let sql = format!("REVOKE {} ON {} FROM {}", privs, obj, grantee);
+
+        let client = self.get_client().await?;
+        let mut client = client.lock().await;
+
+        client
+            .simple_query(&sql)
+            .await
+            .map_err(sqlserver_error_to_db_error)?
+            .into_results()
+            .await
+            .map_err(sqlserver_error_to_db_error)?;
+
+        Ok(())
+    }
+
+    fn get_pool(&self) -> Option<Arc<Self::Pool>> {
+        self.pool.clone()
+    }
+
+    fn get_config(&self) -> &ConnectionConfig {
+        &self.config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database::DatabaseType;
+
+    #[test]
+    fn io_failures_are_connection_errors_and_conversion_errors_are_not() {
+        let error = tiberius::error::Error::Io {
+            kind: std::io::ErrorKind::BrokenPipe,
+            message: "closed socket".into(),
+        };
+        assert!(matches!(
+            sqlserver_error_to_db_error(error),
+            DbError::Connection(_)
+        ));
+        let error = tiberius::error::Error::Conversion("invalid value".into());
+        assert!(matches!(
+            sqlserver_error_to_db_error(error),
+            DbError::QueryExecution(_)
+        ));
+    }
+
+    #[test]
+    fn test_sqlserver_adapter_creation() {
+        let config = ConnectionConfig::new(DatabaseType::SqlServer, "localhost", 1433, "sa")
+            .with_database("testdb")
+            .with_password("Password123!");
+
+        let adapter = SqlServerAdapter::new(config);
+        assert!(adapter.pool.is_none());
+        assert_eq!(adapter.config.host, "localhost");
+    }
+
+    #[test]
+    fn test_sqlserver_config_with_windows_auth() {
+        let config = ConnectionConfig::new(DatabaseType::SqlServer, "localhost", 1433, "")
+            .with_database("testdb")
+            .with_option("use_windows_auth", "true");
+
+        let adapter = SqlServerAdapter::new(config);
+        assert_eq!(
+            adapter.config.options.get("use_windows_auth"),
+            Some(&"true".to_string())
+        );
+    }
+
+    #[test]
+    fn test_sqlserver_config_with_ssl() {
+        let config = ConnectionConfig::new(DatabaseType::SqlServer, "localhost", 1433, "sa")
+            .with_database("testdb")
+            .with_password("Password123!")
+            .with_ssl_mode(SslMode::Require);
+
+        let adapter = SqlServerAdapter::new(config);
+        assert_eq!(adapter.config.ssl_mode, SslMode::Require);
+    }
+
+    #[test]
+    fn test_sqlserver_config_with_trust_cert() {
+        let config = ConnectionConfig::new(DatabaseType::SqlServer, "localhost", 1433, "sa")
+            .with_database("testdb")
+            .with_password("Password123!")
+            .with_option("trust_server_certificate", "true");
+
+        let adapter = SqlServerAdapter::new(config);
+        assert_eq!(
+            adapter.config.options.get("trust_server_certificate"),
+            Some(&"true".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_config() {
+        let config = ConnectionConfig::new(DatabaseType::SqlServer, "localhost", 1433, "sa")
+            .with_database("testdb");
+
+        let adapter = SqlServerAdapter::new(config.clone());
+        let retrieved_config = adapter.get_config();
+
+        assert_eq!(retrieved_config.host, config.host);
+        assert_eq!(retrieved_config.port, config.port);
+        assert_eq!(retrieved_config.username, config.username);
+        assert_eq!(retrieved_config.database, config.database);
+    }
+
+    #[test]
+    fn test_pool_initially_none() {
+        let config = ConnectionConfig::new(DatabaseType::SqlServer, "localhost", 1433, "sa");
+        let adapter = SqlServerAdapter::new(config);
+
+        assert!(adapter.get_pool().is_none());
+    }
+}

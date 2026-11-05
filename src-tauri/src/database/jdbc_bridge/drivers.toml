@@ -1,0 +1,388 @@
+# DBolt JDBC Driver Registry
+#
+# This registry defines known JDBC drivers for databases without native Rust SDKs.
+# Drivers resolve LATEST from Maven Central. The TOML provides Maven coordinates,
+# JDBC URL templates, error signatures, and optional legacy version caps.
+#
+# Embedded at compile time via include_str!() in registry.rs.
+# Format: TOML v0.8+ (parsed with `toml` crate using serde).
+
+[databases.oracle]
+name = "Oracle Database"
+class_name = "oracle.jdbc.OracleDriver"
+maven_group = "com.oracle.database.jdbc"
+maven_artifact = "ojdbc11"
+jdbc_url_template = "jdbc:oracle:thin:@{host}:{port}:{database}"
+jdbc_url_template_service = "jdbc:oracle:thin:@//{host}:{port}/{database}"
+default_port = 1521
+min_jre_version = "11"
+version_cap = "21.15.0.0"
+version_error_signatures = [
+  "ORA-28040",
+  "ORA-03134",
+  "ORA-28002",
+  "ORA-00439",
+  "No matching authentication protocol",
+  "unsupported protocol version",
+  "AbstractMethodError",
+]
+
+# ── TDengine ──
+
+[databases.tdengine]
+name = "TDengine"
+class_name = "com.taosdata.jdbc.TSDBDriver"
+maven_group = "com.taosdata.jdbc"
+maven_artifact = "taos-jdbcdriver"
+jdbc_url_template = "jdbc:TAOS://{host}:{port}/{database}"
+default_port = 6030
+min_jre_version = "11"
+version_error_signatures = [
+  "driver version not compatible",
+  "Authentication failed",
+]
+
+# ── DuckDB ──
+
+[databases.duckdb]
+name = "DuckDB"
+class_name = "org.duckdb.DuckDBDriver"
+maven_group = "org.duckdb"
+maven_artifact = "duckdb_jdbc"
+jdbc_url_template = "jdbc:duckdb:{database}"
+default_port = 0
+min_jre_version = "11"
+version_error_signatures = [
+  "does not exist",
+  "catalog error",
+]
+
+# ── Firebird ──
+
+[databases.firebird]
+name = "Firebird"
+class_name = "org.firebirdsql.jdbc.FBDriver"
+maven_group = "org.firebirdsql.jdbc"
+maven_artifact = "jaybird"
+jdbc_url_template = "jdbc:firebirdsql://{host}:{port}/{database}"
+default_port = 3050
+min_jre_version = "11"
+# Maven has no plain 5.0.2 jar — only jdk-classifier variants (java8/java11).
+# A bare "5.0.2" cap resolves to a 404 and (with cap-first resolution) would
+# hard-fail every Firebird connection; pin the real artifact instead.
+version_cap = "5.0.2.java11"
+version_error_signatures = [
+  "connection rejected",
+  "malformed connection URL",
+  "Invalid parameter",
+  "ISC_ERROR",
+]
+
+# ── IBM DB2 ──
+
+[databases.db2]
+name = "IBM DB2"
+class_name = "com.ibm.db2.jcc.DB2Driver"
+maven_group = "com.ibm.db2"
+maven_artifact = "jcc"
+jdbc_url_template = "jdbc:db2://{host}:{port}/{database}"
+default_port = 50000
+min_jre_version = "11"
+version_cap = "11.5.9.0"
+version_error_signatures = [
+  "The driver does not support this version",
+  "SQL1402N",
+  "The driver version is not compatible",
+  "not supported by this driver version",
+]
+
+# ── H2 Database ──
+
+[databases.h2]
+name = "H2 Database"
+class_name = "org.h2.Driver"
+maven_group = "com.h2database"
+maven_artifact = "h2"
+jdbc_url_template = "jdbc:h2:tcp://{host}:{port}/{database}"
+default_port = 9092
+min_jre_version = "11"
+version_cap = "2.2.224"
+version_error_signatures = [
+  "unsupported SQL grammar",
+  "Feature not supported",
+  "Wrong user or password",
+  "IO Exception",
+]
+
+# ── Apache Derby ──
+
+[databases.derby]
+name = "Apache Derby"
+class_name = "org.apache.derby.jdbc.ClientDriver"
+maven_group = "org.apache.derby"
+maven_artifact = "derbyclient"
+jdbc_url_template = "jdbc:derby://{host}:{port}/{database}"
+default_port = 1527
+min_jre_version = "11"
+version_cap = "10.16.1.1"
+version_error_signatures = [
+  "unsupported SQL grammar",
+  "Driver requires a newer version",
+  "protocol version mismatch",
+]
+
+# ── Snowflake ──
+
+[databases.snowflake]
+name = "Snowflake"
+class_name = "net.snowflake.client.jdbc.SnowflakeDriver"
+maven_group = "net.snowflake"
+maven_artifact = "snowflake-jdbc"
+jdbc_url_template = "jdbc:snowflake://{host}.snowflakecomputing.com?warehouse={database}&db={database}"
+default_port = 443
+min_jre_version = "11"
+version_error_signatures = [
+  "unsupported authentication",
+  "Incompatible driver version",
+]
+
+# ── 达梦 Dameng DM8 (JDBC bridge) ──
+
+[databases.dameng]
+name = "达梦 Dameng"
+class_name = "dm.jdbc.driver.DmDriver"
+maven_group = "com.dameng"
+maven_artifact = "DmJdbcDriver8"
+jdbc_url_template = "jdbc:dm://{host}:{port}"
+default_port = 5236
+min_jre_version = "11"
+version_error_signatures = [
+  "driver version not compatible",
+  "not support",
+]
+
+# ── 虚谷 XuguDB ──
+
+[databases.xugudb]
+name = "虚谷 XuguDB"
+class_name = "com.xugu.cloudjdbc.Driver"
+maven_group = "com.xugudb"
+maven_artifact = "xugu-jdbc"
+jdbc_url_template = "jdbc:xugu://{host}:{port}/{database}"
+default_port = 5138
+min_jre_version = "11"
+credentials_in_url = true
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── 南大通用 GBase 8a ──
+
+[databases.gbase8a]
+name = "GBase 8a"
+class_name = "com.gbase.jdbc.Driver"
+maven_group = "com.gbase"
+maven_artifact = "gbase-connector-java"
+jdbc_url_template = "jdbc:gbase://{host}:{port}/{database}"
+default_port = 5258
+min_jre_version = "11"
+version_cap = "8.3.81.53"
+download_url = "https://www.gbase8.cn/wp-content/uploads/2020/10/gbase-connector-java-8.3.81.53-build55.5.7-bin_min_mix.jar"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Apache Hive ──
+#
+# Hive JDBC uses the "standalone" classifier on Maven Central, which
+# produces a fat JAR with all dependencies included.
+#
+#   https://repo1.maven.org/maven2/org/apache/hive/hive-jdbc/{version}/
+#   → hive-jdbc-{version}-standalone.jar  (with classifier)
+
+[databases.hive]
+name = "Apache Hive"
+class_name = "org.apache.hive.jdbc.HiveDriver"
+maven_group = "org.apache.hive"
+maven_artifact = "hive-jdbc"
+jdbc_url_template = "jdbc:hive2://{host}:{port}/{database}"
+default_port = 10000
+min_jre_version = "11"
+maven_classifier = "standalone"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Databricks SQL ──
+
+[databases.databricks]
+name = "Databricks SQL"
+class_name = "com.databricks.client.jdbc.Driver"
+maven_group = "com.databricks"
+maven_artifact = "databricks-jdbc"
+jdbc_url_template = "jdbc:databricks://{host}:{port};httpPath={database}"
+default_port = 443
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── SAP HANA ──
+
+[databases.hana]
+name = "SAP HANA"
+class_name = "com.sap.db.jdbc.Driver"
+maven_group = "com.sap.cloud.db.jdbc"
+maven_artifact = "ngdbc"
+jdbc_url_template = "jdbc:sap://{host}:{port}/{database}"
+default_port = 30015
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Teradata ──
+
+[databases.teradata]
+name = "Teradata"
+class_name = "com.teradata.jdbc.TeraDriver"
+maven_group = "com.teradata.jdbc"
+maven_artifact = "terajdbc"
+jdbc_url_template = "jdbc:teradata://{host}/DATABASE={database}"
+default_port = 1025
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Vertica ──
+
+[databases.vertica]
+name = "Vertica"
+class_name = "com.vertica.jdbc.Driver"
+maven_group = "com.vertica.jdbc"
+maven_artifact = "vertica-jdbc"
+jdbc_url_template = "jdbc:vertica://{host}:{port}/{database}"
+default_port = 5433
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Exasol ──
+
+[databases.exasol]
+name = "Exasol"
+class_name = "com.exasol.jdbc.EXADriver"
+maven_group = "com.exasol"
+maven_artifact = "exasol-jdbc"
+jdbc_url_template = "jdbc:exa:{host}:{port};schema={database}"
+default_port = 8563
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Google BigQuery ──
+
+[databases.bigquery]
+name = "Google BigQuery"
+class_name = "com.simba.googlebigquery.jdbc.Driver"
+maven_group = "com.simba"
+maven_artifact = "googlebigquery-jdbc"
+jdbc_url_template = "jdbc:bigquery://{host}:{port};ProjectId={database}"
+default_port = 443
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── IBM Informix ──
+
+[databases.informix]
+name = "IBM Informix"
+class_name = "com.informix.jdbc.IfxDriver"
+maven_group = "com.ibm.informix"
+maven_artifact = "jcc"
+jdbc_url_template = "jdbc:informix-sqli://{host}:{port}/{database}:INFORMIXSERVER=informix"
+default_port = 9088
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Apache Kylin ──
+
+[databases.kylin]
+name = "Apache Kylin"
+class_name = "org.apache.kylin.jdbc.Driver"
+maven_group = "org.apache.kylin"
+maven_artifact = "kylin-jdbc"
+jdbc_url_template = "jdbc:kylin://{host}:{port}/{database}"
+default_port = 7070
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Apache Cassandra ──
+
+[databases.cassandra]
+name = "Apache Cassandra"
+class_name = "com.simba.cassandra.jdbc.Driver"
+maven_group = "com.simba"
+maven_artifact = "cassandra-jdbc"
+jdbc_url_template = "jdbc:cassandra://{host}:{port}/{database}"
+default_port = 9042
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── InterSystems IRIS ──
+
+[databases.iris]
+name = "InterSystems IRIS"
+class_name = "com.intersystems.jdbc.IRISDriver"
+maven_group = "com.intersystems"
+maven_artifact = "jdbc"
+jdbc_url_template = "jdbc:IRIS://{host}:{port}/{database}"
+default_port = 1972
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── Microsoft Access ──
+
+[databases.access]
+name = "Microsoft Access"
+class_name = "net.ucanaccess.jdbc.UcanaccessDriver"
+maven_group = "net.sf.ucanaccess"
+maven_artifact = "ucanaccess"
+jdbc_url_template = "jdbc:ucanaccess://{host}/{database}"
+default_port = 0
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── YashanDB (崖山数据库) ──
+#
+# Official JDBC driver from Yashan Technologies. Published on Maven Central.
+# Uses `jdbc:yasdb:` protocol — NOT PG-wire compatible.
+
+[databases.yashandb]
+name = "YashanDB (崖山数据库)"
+class_name = "com.yashandb.jdbc.Driver"
+maven_group = "com.yashandb"
+maven_artifact = "yashandb-jdbc"
+jdbc_url_template = "jdbc:yasdb://{host}:{port}/{database}"
+default_port = 1688
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── KingbaseES (人大金仓) ──
+#
+# Official JDBC driver from 电科金仓. Published on Maven Central.
+# Uses `jdbc:kingbase8:` protocol — PG-wire compatible but JDBC bridge
+# gives access to advanced features (read-write splitting, Oracle-compat mode).
+
+[databases.kingbase]
+name = "KingbaseES (人大金仓)"
+class_name = "com.kingbase8.Driver"
+maven_group = "cn.com.kingbase"
+maven_artifact = "kingbase8"
+jdbc_url_template = "jdbc:kingbase8://{host}:{port}/{database}"
+default_port = 54321
+min_jre_version = "11"
+version_error_signatures = [ "driver version not compatible", ]
+
+# ── OceanBase Oracle ──
+
+[databases.oceanbase_oracle]
+name = "OceanBase Oracle"
+class_name = "com.oceanbase.jdbc.Driver"
+maven_group = "com.oceanbase"
+maven_artifact = "oceanbase-client"
+jdbc_url_template = "jdbc:oceanbase://{host}:{port}/{database}?compatibleOjdbcVersion=8"
+default_port = 2881
+min_jre_version = "11"
+version_error_signatures = [
+  "OB-",
+  "compatibleOjdbcVersion",
+  "unsupported protocol",
+  "AbstractMethodError",
+]

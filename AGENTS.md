@@ -1,0 +1,258 @@
+# DBolt Agent Guidelines
+
+## Project Overview
+
+Tauri-based cross-platform SQL database GUI client with Vue 3 + TypeScript frontend and Rust backend.
+
+## UI Design Guidelines
+
+**Before adding or changing client UI, read [DESIGN.md](DESIGN.md).** It is the canonical client design specification; feature design documents describe behavior within that system.
+
+- Preserve DBolt's existing **blue primary**, light/dark/system themes, compact desktop workspace, and shared shadcn-vue/Radix Vue components. Keep semantic color ownership consistent and retain DBolt's blue brand and primary actions.
+- Use neutral surfaces, typography, spacing, and borders for hierarchy. Keep accent areas scarce (roughly 10% of application chrome); use at most one solid primary action per operation context. Keep Execute compact and unfilled. Preserve the original functional icon and data colors documented in DESIGN.md.
+- Colors have fixed roles: `primary` = primary actions/interaction; `success` = actual success/connected/completed; `destructive` = errors/destructive actions. Preserve existing boolean, key/constraint, type, filter, permission, format, and icon recognition colors, with labels or distinct glyphs alongside them. Do not tint whole features or add a separate AI palette. Recognition colors describe content and actions independently of operational status; do not flatten them to gray during surface refactors.
+- Reuse semantic CSS tokens from `src/assets/index.css` and their `uno.config.ts` mappings. Preserve existing palette utilities for functional recognition; a token migration must retain the original hues and theme variants. `accent` is a neutral interaction surface, not a second brand color.
+- `warning` is registered with light/dark foreground, muted-background, and border pairs; `info` is **not registered**. Use `primary-text` and `destructive-text` for readable colored text, reserving the corresponding base tokens for solid actions. Any new semantic token must include light/dark definitions, necessary foreground pairs, UnoCSS mappings, shared variants where needed, contrast verification, and a DESIGN.md update in the same change.
+- Non-interactive badges explicitly use `outline`/`secondary` by default; status colors require real state and accompanying text or icons. Syntax highlighting, data charts, diffs, and small vendor logos have the bounded exceptions documented in DESIGN.md.
+- Provide visible keyboard focus, accessible icon-button names, loading/empty/error states, readable contrast, and localized copy. Reuse runtime platform detection for shortcuts and native window behavior.
+- Existing functional recognition colors are intentional compatibility constraints. Avoid new unrelated hardcoded colors. Distinguish documented targets from implemented behavior, and verify the affected themes, window sizes, and interactions when changing UI.
+
+## Build/Lint/Test Commands
+
+### Frontend
+```bash
+npm run dev              # Vite dev server (port 1420)
+npm run build            # Build frontend (vue-tsc + vite)
+npm run lint:check       # Check linting
+npm run lint:fix         # Auto-fix lint issues
+npm test                 # Run all tests with coverage
+npm test -- src/__tests__/tabStore.test.ts  # Run single test file
+npx jest -t "createTab"  # Run tests matching pattern
+```
+
+### Rust Backend
+```bash
+cd src-tauri
+cargo build              # Build
+cargo test               # Run all unit tests
+cargo test test_name     # Run single test
+cargo test --test postgres_integration  # Run integration test
+cargo fmt                # Format code
+cargo clippy             # Linter
+```
+
+### Full App
+```bash
+npm run tauri dev        # Run Tauri app in dev mode
+```
+
+## Code Style Guidelines
+
+### TypeScript/Frontend
+
+**Functions**: Use arrow functions (`const xxx = (...) => ...`). Prefer functional decomposition over OOP; avoid classes unless strictly necessary.
+```typescript
+// ✅ Correct
+const getConnectionId = () => selectedConnectionId.value || connectionStore.activeConnectionId
+const isConnectionActive = (connId: string | null): boolean =>
+  connId !== null && connectionStore.getConnectionStatus(connId) === ConnectionStatus.CONNECTED
+
+// ❌ Avoid
+function getConnectionId() { ... }
+class ConnectionManager { ... }
+```
+
+**Collections**: Replace `for`/`while` loops with `map`, `filter`, `find`, `some`, `every`, `reduce`, `flatMap`. Favor pipeline-style transformations.
+```typescript
+// ✅ Correct
+const activeTabs = tabs.filter(t => t.isActive)
+const tabById = (id: string) => tabs.find(t => t.id === id)
+const names = users.map(u => u.name).sort()
+
+// ❌ Avoid
+for (const tab of tabs) { ... }
+```
+
+**Types**: Prefer `type`/`enum` over `interface`; use `type` when it can fully replace an `interface`.
+```typescript
+// ✅ Correct
+type QueryTab = {
+  id: string
+  name: string
+}
+
+// ❌ Avoid
+interface QueryTab { ... }
+```
+
+**Immutability**: Avoid in-place mutation (`push`, `splice`, mutating objects/arrays). Return new arrays/objects; model changes as explicit state-transform functions.
+```typescript
+// ✅ Correct
+const newTabs = [...tabs, newTab]
+return { ...state, tabs: newTabs }
+
+// ❌ Avoid
+tabs.push(newTab)
+state.tabs = tabs
+```
+
+**Pure Functions**: Keep functions small, composable, and side-effect-free. If effects are required (I/O, logging), isolate them at boundaries.
+
+**Module Boundaries**: Each module should export only via its `index.ts`; avoid deep imports.
+```typescript
+// ✅ Correct
+import { Button } from '@/components/ui/button'
+import { useTabStore } from '@/store/tabStore'
+
+// ❌ Avoid
+import { Button } from '@/components/ui/button/Button.vue'
+import { useTabStore } from '../store/tabStore'
+```
+
+**Export Discipline**: Only export functions/types/constants that are used outside the module.
+
+**Provider-agnostic Design**: Keep provider-agnostic abstractions; follow clean separation of concerns.
+
+**Comments**: Use as few inline comments as possible; behavior should be clear from tests and naming.
+
+**Formatting** (via @antfu/eslint-config):
+- Single quotes
+- Print width: 100
+- Tab width: 2 spaces
+- Semicolons: yes
+- Arrow parens: avoid `(x) => x` → `x => x`
+
+### Rust Backend
+
+**Error Handling**: All database operations return `DbResult<T>`.
+```rust
+pub async fn connect(&mut self) -> DbResult<()> {
+    let pool = create_pool().map_err(|e| DbError::Connection(e.to_string()))?;
+    Ok(())
+}
+```
+
+**Async**: Use `#[async_trait]` for trait methods, `tokio::sync::Mutex` for shared state.
+```rust
+#[async_trait]
+impl DatabaseAdapter for PostgresAdapter {
+    async fn connect(&mut self) -> DbResult<()> { ... }
+}
+```
+
+**Tests**: Use `#[tokio::test]` for async tests, `#[ignore]` for integration tests requiring DB.
+```rust
+#[tokio::test]
+#[ignore]  // Requires running PostgreSQL
+async fn test_connection() { ... }
+```
+
+## Cross-Platform Support
+
+DBolt targets **macOS, Windows, and Linux**. All UI elements must be platform-aware.
+
+**Keyboard Shortcuts**: Use `Ctrl` on Windows/Linux, `⌘` (Cmd) on macOS. Detect platform at runtime:
+```typescript
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+const cmdKey = isMac ? '⌘' : 'Ctrl+'
+```
+
+**Never hardcode platform-specific modifiers** in UI labels (shortcuts, hints, tooltips). Always use runtime detection.
+
+**File Paths**: Use `path.join()` or `path.sep` for cross-platform path handling. Never assume `/` or `\` as separator.
+
+**Line Endings**: Handle both `\n` (Unix/macOS) and `\r\n` (Windows) when parsing files. Use `\n` when writing.
+
+## Project Structure
+
+```
+src/
+├── components/          # Vue components (shadcn-vue based)
+│   ├── ui/             # Base UI components
+│   └── index.ts        # Module exports only
+├── store/              # Pinia stores
+├── pages/              # Route pages
+├── datasources/        # Tauri API wrappers
+└── types/              # TypeScript types
+
+src-tauri/src/
+├── commands/           # Tauri command handlers
+├── database/           # Database adapters (trait impl)
+├── state.rs           # AppState with active connections
+└── lib.rs             # Command registration
+```
+
+## Key Patterns
+
+**Tauri Commands**: Return `Result<T, String>`, use `State<'_, AppState>`.
+```rust
+#[tauri::command]
+pub async fn execute_query(
+    connection_id: String,
+    sql: String,
+    state: State<'_, AppState>,
+) -> Result<QueryResult, String> {
+    // ...
+}
+```
+
+**Frontend API Calls**: Use `invoke` from `@tauri-apps/api/core`.
+```typescript
+const result = await invoke<QueryResult>('execute_query', {
+  connectionId: 'server-uuid',
+  sql: 'SELECT * FROM users',
+})
+```
+
+**Vue Components**: Use `<script setup lang="ts">`.
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+
+const count = ref(0)
+</script>
+```
+
+## Testing
+
+**Frontend**: Jest with mocks. Mock Tauri APIs.
+```typescript
+jest.mock('@tauri-apps/api/core', () => ({
+  invoke: jest.fn(),
+}))
+```
+
+**Rust**: Unit tests in same file with `#[cfg(test)]`, integration tests in `src-tauri/tests/`.
+
+## Git & Commits
+
+**CRITICAL**: NEVER commit changes unless the user explicitly asks you to.
+
+- ❌ Do NOT commit after every change
+- ❌ Do NOT commit to "save progress"
+- ❌ Do NOT commit without explicit request like "commit this" or "create a commit"
+- ✅ Wait for user to explicitly request a commit
+- ✅ When asked to commit, use descriptive messages
+
+**When user requests a commit**:
+```bash
+git add .
+git commit -m "feat: description of changes"
+git push
+```
+
+## Common Tasks
+
+**Adding a Tauri Command**:
+1. Add function in `src-tauri/src/commands/`
+2. Add `#[tauri::command]` attribute
+3. Export from `commands/mod.rs`
+4. Register in `lib.rs` `generate_handler![]`
+
+**Adding a Database Adapter**:
+1. Create `src-tauri/src/database/newdb.rs`
+2. Implement `DatabaseAdapter` trait
+3. Add to `mod.rs` exports
+4. Add variant to `ActiveConnection` enum in `state.rs`
+5. Update command match statements
+

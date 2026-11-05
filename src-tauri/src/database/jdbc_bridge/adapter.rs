@@ -1,0 +1,920 @@
+//! JDBC bridge adapter — implements DatabaseAdapter by delegating to a Java subprocess.
+
+use crate::database::{
+    adapter::DatabaseAdapter,
+    config::ConnectionConfig,
+    error::{DbError, DbResult},
+    types::{
+        ColumnInfo, ConnectionStatus, DatabaseSchema, ForeignKeyInfo, IndexInfo, ObjectInfo,
+        QueryResult, QueryRow, QueryValue, TableInfo, TriggerInfo,
+    },
+};
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use super::launcher::JdbcBridgeLauncher;
+use super::pool::JdbcBridgePool;
+use super::protocol::{ConnectionStatusData, JdbcMethod, JdbcRequest, QueryResultData};
+
+/// JDBC bridge adapter.
+///
+/// Spawns a Java subprocess (lazily) and communicates via JSON-RPC
+/// over stdin/stdout. The Java side holds a HikariCP connection pool,
+/// so connections are reused across queries.
+pub struct JdbcBridgeAdapter {
+    pub config: ConnectionConfig,
+    launcher: Option<Arc<Mutex<JdbcBridgeLauncher>>>,
+    conn_id: Option<String>,
+}
+
+impl JdbcBridgeAdapter {
+    pub fn new(config: ConnectionConfig) -> Self {
+        Self {
+            config,
+            launcher: None,
+            conn_id: None,
+        }
+    }
+
+    /// Ensure all prerequisites are met: JRE, bridge JAR, and JDBC driver.
+    /// Uses the fallback chain to try multiple driver versions automatically.
+    async fn init_bridge(&mut self) -> DbResult<Arc<Mutex<JdbcBridgeLauncher>>> {
+        let db_type = self.config.db_type;
+        let ssl_mode_str = match self.config.ssl_mode {
+            crate::database::config::SslMode::Disable => "disable",
+            crate::database::config::SslMode::Prefer => "prefer",
+            crate::database::config::SslMode::Require => "require",
+            crate::database::config::SslMode::VerifyCA => "verify-ca",
+            crate::database::config::SslMode::VerifyFull => "verify-full",
+        };
+        // Embedded / file-based types have no SSL settings in the UI, so the
+        // stored mode is just the Prefer default — sending it would make the
+        // bridge inject `ssl=true` into drivers that reject unknown options
+        // (e.g. DuckDB, issue #158). None omits the field entirely.
+        let ssl_mode = if db_type.ssl_supported() {
+            Some(ssl_mode_str)
+        } else {
+            None
+        };
+
+        // Use fallback chain for JDBC-dependent databases (Oracle, DB2, H2, etc.)
+        // For non-registry types, fall back to the old single-driver approach
+        let (_version, conn_id, launcher) = super::fallback::run_fallback_chain(
+            db_type,
+            &self.config.host,
+            self.config.port,
+            self.config.database.as_deref(),
+            &self.config.username,
+            &self.config.password,
+            self.config.oracle_options.as_ref(),
+            ssl_mode,
+            self.config.ssl_ca_cert.as_deref(),
+            self.config.ssl_client_cert.as_deref(),
+            self.config.ssl_client_key.as_deref(),
+            self.config.trust_server_certificate,
+        )
+        .await?;
+
+        self.conn_id = Some(conn_id);
+        self.launcher = Some(launcher.clone());
+
+        Ok(launcher)
+    }
+
+    /// Get the launcher (must be initialized first via `connect`).
+    fn launcher(&self) -> DbResult<&Arc<Mutex<JdbcBridgeLauncher>>> {
+        self.launcher
+            .as_ref()
+            .ok_or_else(|| DbError::Connection("Not connected".to_string()))
+    }
+
+    async fn send_request(
+        launcher: &Arc<Mutex<JdbcBridgeLauncher>>,
+        req: JdbcRequest,
+    ) -> DbResult<serde_json::Value> {
+        let launcher = launcher.clone();
+        let resp = tokio::task::spawn_blocking(move || {
+            let mut guard = launcher.blocking_lock();
+            guard.send_request(&req)
+        })
+        .await
+        .map_err(|e| DbError::Connection(format!("JDBC bridge task panicked: {}", e)))??;
+        Ok(resp.result.unwrap_or(serde_json::Value::Null))
+    }
+
+    fn parse_query_result(data: serde_json::Value) -> DbResult<QueryResult> {
+        let qr: QueryResultData = serde_json::from_value(data)
+            .map_err(|e| DbError::Serialization(format!("Failed to parse query result: {}", e)))?;
+
+        let rows: Vec<QueryRow> = qr
+            .rows
+            .into_iter()
+            .map(|row| {
+                let mut map: HashMap<String, QueryValue> = HashMap::new();
+                for (i, val) in row.into_iter().enumerate() {
+                    let col_name = qr.columns.get(i).cloned().unwrap_or_default();
+                    let qv = match val {
+                        serde_json::Value::Null => QueryValue::Null,
+                        serde_json::Value::String(s) => QueryValue::String(s),
+                        serde_json::Value::Number(n) => {
+                            if let Some(i) = n.as_i64() {
+                                QueryValue::Int(i)
+                            } else {
+                                QueryValue::String(n.to_string())
+                            }
+                        }
+                        serde_json::Value::Bool(b) => QueryValue::Bool(b),
+                        _ => QueryValue::String(val.to_string()),
+                    };
+                    map.insert(col_name, qv);
+                }
+                map
+            })
+            .collect();
+
+        Ok(QueryResult {
+            columns: qr.columns,
+            column_types: Vec::new(),
+            rows,
+            rows_affected: qr.rows_affected,
+            execution_time_ms: None,
+            truncated: false,
+            result_sets: Vec::new(),
+        })
+    }
+
+    fn parse_connection_status(data: serde_json::Value) -> DbResult<ConnectionStatus> {
+        let cs: ConnectionStatusData = serde_json::from_value(data)
+            .map_err(|e| DbError::Serialization(format!("Failed to parse status: {}", e)))?;
+        Ok(cs.into())
+    }
+
+    /// Send a metadata list request whose result parses directly into `T`
+    /// (the Java side emits the exact struct field names).
+    async fn send_list_request<T: serde::de::DeserializeOwned>(
+        &self,
+        method: JdbcMethod,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: Option<&str>,
+    ) -> DbResult<T> {
+        let launcher = self.launcher()?;
+        let data = Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                method,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                    "database": database,
+                    "schema": schema,
+                    "table": table,
+                }),
+            ),
+        )
+        .await?;
+        serde_json::from_value(data)
+            .map_err(|e| DbError::Serialization(format!("Failed to parse result: {}", e)))
+    }
+}
+
+#[async_trait]
+impl DatabaseAdapter for JdbcBridgeAdapter {
+    type Pool = JdbcBridgePool;
+
+    async fn connect(&mut self) -> DbResult<()> {
+        self.init_bridge().await?;
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> DbResult<()> {
+        // Release only this connection's pool. The bridge process is shared with
+        // other connections, and `disconnect` is what closes the HikariCP pool —
+        // which in turn releases DuckDB's exclusive file lock.
+        if let (Some(launcher), Some(conn_id)) = (self.launcher.clone(), self.conn_id.clone()) {
+            let request = JdbcRequest::new(
+                JdbcMethod::Disconnect,
+                serde_json::json!({ "conn_id": conn_id }),
+            );
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                Self::send_request(&launcher, request).await
+            })
+            .await;
+        }
+        self.launcher = None;
+        self.conn_id = None;
+        Ok(())
+    }
+
+    async fn test_connection(&self) -> DbResult<ConnectionStatus> {
+        let launcher = self.launcher()?;
+        let data = Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::TestConnection,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                }),
+            ),
+        )
+        .await?;
+        Self::parse_connection_status(data)
+    }
+
+    async fn execute_query(&self, query: &str) -> DbResult<QueryResult> {
+        let launcher = self.launcher()?;
+        let statements = split_sql_statements_for_dialect(
+            query,
+            self.config.db_type == super::super::DatabaseType::Oracle,
+        );
+        if statements.is_empty() {
+            return Ok(QueryResult {
+                columns: Vec::new(),
+                column_types: Vec::new(),
+                rows: Vec::new(),
+                rows_affected: Some(0),
+                execution_time_ms: None,
+                truncated: false,
+                result_sets: Vec::new(),
+            });
+        }
+        // Execute each statement individually. Many JDBC drivers (notably
+        // Dameng) reject multiple DDL/DML statements sent as a single string,
+        // so splitting is required.
+        //
+        // Result aggregation: for SELECT statements we want to show the last
+        // result (the user is interested in the final query output). For DML
+        // statements (no rows, has rows_affected) we accumulate the total so
+        // that multi-statement INSERTs and UPDATEs report correct counts.
+        //
+        // Note: statements are NOT wrapped in a transaction — each executes
+        // in autocommit mode. If statement N fails, statements 1..N-1 are
+        // already committed. This matches the behavior of executing each
+        // statement individually in the editor.
+        let mut result = QueryResult {
+            columns: Vec::new(),
+            column_types: Vec::new(),
+            rows: Vec::new(),
+            rows_affected: Some(0),
+            execution_time_ms: None,
+            truncated: false,
+            result_sets: Vec::new(),
+        };
+        for stmt in &statements {
+            let data = Self::send_request(
+                launcher,
+                JdbcRequest::new(
+                    JdbcMethod::ExecuteQuery,
+                    serde_json::json!({
+                        "conn_id": self.conn_id,
+                        "sql": stmt,
+                    }),
+                ),
+            )
+            .await?;
+            let stmt_result = Self::parse_query_result(data)?;
+            let has_rows = !stmt_result.columns.is_empty() || !stmt_result.rows.is_empty();
+            if has_rows {
+                result.columns = stmt_result.columns;
+                result.column_types = stmt_result.column_types;
+                result.rows = stmt_result.rows;
+                result.rows_affected = stmt_result.rows_affected;
+            } else if let Some(affected) = stmt_result.rows_affected {
+                let total = result.rows_affected.unwrap_or(0) + affected;
+                result.rows_affected = Some(total);
+            }
+            result.execution_time_ms = stmt_result.execution_time_ms;
+            result.truncated = result.truncated || stmt_result.truncated;
+        }
+        Ok(result)
+    }
+
+    async fn list_databases(&self) -> DbResult<Vec<DatabaseSchema>> {
+        let launcher = self.launcher()?;
+        let data = Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::ListDatabases,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                }),
+            ),
+        )
+        .await?;
+        let names: Vec<String> = serde_json::from_value(data)
+            .map_err(|e| DbError::Serialization(format!("Failed to parse database list: {}", e)))?;
+        Ok(names
+            .into_iter()
+            .map(|name| DatabaseSchema {
+                name,
+                description: None,
+                is_system: false,
+                metadata: HashMap::new(),
+            })
+            .collect())
+    }
+
+    async fn list_schemas(&self, database: Option<&str>) -> DbResult<Vec<String>> {
+        let launcher = self.launcher()?;
+        let data = Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::ListSchemas,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                    "database": database,
+                }),
+            ),
+        )
+        .await?;
+        serde_json::from_value(data)
+            .map_err(|e| DbError::Serialization(format!("Failed to parse schema list: {}", e)))
+    }
+
+    async fn list_tables(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<TableInfo>> {
+        let launcher = self.launcher()?;
+        let data = Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::ListTables,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                    "database": database,
+                    "schema": schema,
+                }),
+            ),
+        )
+        .await?;
+        let tables: Vec<serde_json::Value> = serde_json::from_value(data)
+            .map_err(|e| DbError::Serialization(format!("Failed to parse table list: {}", e)))?;
+        Ok(tables
+            .into_iter()
+            .filter_map(|t| {
+                Some(TableInfo {
+                    schema: t.get("schema")?.as_str().map(|s| s.to_string()),
+                    name: t.get("name")?.as_str()?.to_string(),
+                    table_type: t
+                        .get("table_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("TABLE")
+                        .to_string(),
+                    row_count: t.get("row_count").and_then(|v| v.as_u64()),
+                    size_bytes: None,
+                    description: None,
+                    metadata: HashMap::new(),
+                })
+            })
+            .collect())
+    }
+
+    async fn list_columns(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<ColumnInfo>> {
+        let launcher = self.launcher()?;
+        let data = Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::ListColumns,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                    "database": database,
+                    "schema": schema,
+                    "table": table,
+                }),
+            ),
+        )
+        .await?;
+        let cols: Vec<serde_json::Value> = serde_json::from_value(data)
+            .map_err(|e| DbError::Serialization(format!("Failed to parse column list: {}", e)))?;
+        Ok(cols
+            .into_iter()
+            .filter_map(|c| {
+                Some(ColumnInfo {
+                    name: c.get("name")?.as_str()?.to_string(),
+                    data_type: c
+                        .get("data_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    nullable: c.get("nullable").and_then(|v| v.as_bool()).unwrap_or(true),
+                    default_value: c
+                        .get("default_value")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
+                    is_primary_key: c
+                        .get("is_primary_key")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    is_auto_increment: c
+                        .get("is_auto_increment")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    max_length: c
+                        .get("max_length")
+                        .and_then(|v| v.as_u64().map(|x| x as u32)),
+                    precision: c
+                        .get("precision")
+                        .and_then(|v| v.as_u64().map(|x| x as u32)),
+                    scale: c.get("scale").and_then(|v| v.as_u64().map(|x| x as u32)),
+                    description: None,
+                    metadata: HashMap::new(),
+                })
+            })
+            .collect())
+    }
+
+    async fn get_table_info(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<TableInfo> {
+        let tables = self.list_tables(database, schema).await?;
+        tables
+            .into_iter()
+            .find(|t| t.name == table)
+            .ok_or_else(|| DbError::Connection(format!("Table '{}' not found", table)))
+    }
+
+    async fn list_views(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ObjectInfo>> {
+        self.send_list_request(JdbcMethod::ListViews, database, schema, None)
+            .await
+    }
+
+    async fn list_procedures(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ObjectInfo>> {
+        self.send_list_request(JdbcMethod::ListProcedures, database, schema, None)
+            .await
+    }
+
+    async fn list_functions(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ObjectInfo>> {
+        self.send_list_request(JdbcMethod::ListFunctions, database, schema, None)
+            .await
+    }
+
+    async fn list_triggers(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<TriggerInfo>> {
+        self.send_list_request(JdbcMethod::ListTriggers, database, schema, Some(table))
+            .await
+    }
+
+    async fn list_indexes(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<IndexInfo>> {
+        self.send_list_request(JdbcMethod::ListIndexes, database, schema, Some(table))
+            .await
+    }
+
+    async fn list_foreign_keys(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        table: &str,
+    ) -> DbResult<Vec<ForeignKeyInfo>> {
+        self.send_list_request(JdbcMethod::ListForeignKeys, database, schema, Some(table))
+            .await
+    }
+
+    async fn get_foreign_keys(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+    ) -> DbResult<Vec<ForeignKeyInfo>> {
+        self.send_list_request(JdbcMethod::GetForeignKeys, database, schema, None)
+            .await
+    }
+
+    async fn get_object_ddl(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        object_name: &str,
+        object_type: &str,
+    ) -> DbResult<String> {
+        let launcher = self.launcher()?;
+        let data = Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::GetObjectDdl,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                    "database": database,
+                    "schema": schema,
+                    "object_name": object_name,
+                    "object_type": object_type,
+                }),
+            ),
+        )
+        .await?;
+
+        let ddl: Option<String> =
+            serde_json::from_value(data.get("ddl").cloned().unwrap_or(serde_json::Value::Null))
+                .map_err(|e| DbError::Serialization(format!("Failed to parse DDL: {}", e)))?;
+        ddl.ok_or_else(|| {
+            DbError::UnsupportedOperation(format!(
+                "DDL not available for {} '{}' on this engine",
+                object_type, object_name
+            ))
+        })
+    }
+
+    async fn drop_object(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        object_name: &str,
+        object_type: &str,
+    ) -> DbResult<()> {
+        let launcher = self.launcher()?;
+        Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::DropObject,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                    "database": database,
+                    "schema": schema,
+                    "object_name": object_name,
+                    "object_type": object_type,
+                }),
+            ),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn rename_object(
+        &self,
+        database: Option<&str>,
+        schema: Option<&str>,
+        object_name: &str,
+        object_type: &str,
+        new_name: &str,
+    ) -> DbResult<()> {
+        let launcher = self.launcher()?;
+        Self::send_request(
+            launcher,
+            JdbcRequest::new(
+                JdbcMethod::RenameObject,
+                serde_json::json!({
+                    "conn_id": self.conn_id,
+                    "database": database,
+                    "schema": schema,
+                    "object_name": object_name,
+                    "object_type": object_type,
+                    "new_name": new_name,
+                }),
+            ),
+        )
+        .await?;
+        Ok(())
+    }
+
+    fn get_pool(&self) -> Option<Arc<Self::Pool>> {
+        None
+    }
+
+    fn get_config(&self) -> &ConnectionConfig {
+        &self.config
+    }
+}
+
+/// Split a SQL string into individual statements separated by `;`.
+///
+/// Handles:
+/// - Single-quoted string literals (`'...'`)
+/// - Double-quoted identifiers (`"..."`)
+/// - `--` single-line comments
+/// - `/* ... */` block comments
+/// - Trailing semicolons and whitespace
+/// - Empty statements are skipped
+#[cfg(test)]
+fn split_sql_statements(sql: &str) -> Vec<String> {
+    split_sql_statements_for_dialect(sql, false)
+}
+
+fn is_oracle_block(sql: &str) -> bool {
+    let words: Vec<String> = sql
+        .split_whitespace()
+        .take(6)
+        .map(str::to_ascii_uppercase)
+        .collect();
+    if matches!(words.first().map(String::as_str), Some("BEGIN" | "DECLARE")) {
+        return true;
+    }
+    if words.first().map(String::as_str) != Some("CREATE") {
+        return false;
+    }
+    words.iter().skip(1).any(|word| {
+        matches!(
+            word.as_str(),
+            "FUNCTION" | "PROCEDURE" | "PACKAGE" | "TRIGGER" | "TYPE"
+        )
+    })
+}
+
+fn split_sql_statements_for_dialect(sql: &str, oracle: bool) -> Vec<String> {
+    let mut statements: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        if oracle
+            && c == '/'
+            && (current.trim().is_empty() || is_oracle_block(current.trim()))
+            && current
+                .rsplit_once('\n')
+                .map(|(_, tail)| tail.trim().is_empty())
+                .unwrap_or(current.trim().is_empty())
+            && chars[i + 1..]
+                .iter()
+                .take_while(|c| **c != '\n')
+                .all(|c| c.is_whitespace())
+        {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                statements.push(trimmed);
+            }
+            current.clear();
+        }
+        // Oracle alternative quoted literals may contain both quotes and semicolons.
+        else if oracle
+            && matches!(c, 'q' | 'Q')
+            && chars.get(i + 1) == Some(&'\'')
+            && i + 2 < chars.len()
+        {
+            let close = match chars[i + 2] {
+                '[' => ']',
+                '(' => ')',
+                '{' => '}',
+                '<' => '>',
+                c => c,
+            };
+            current.extend(&chars[i..i + 3]);
+            i += 3;
+            while i < chars.len() {
+                current.push(chars[i]);
+                if chars[i] == close && chars.get(i + 1) == Some(&'\'') {
+                    current.push('\'');
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+        }
+        // Single-quoted string literal
+        else if c == '\'' {
+            current.push(c);
+            i += 1;
+            while i < chars.len() {
+                current.push(chars[i]);
+                if chars[i] == '\'' {
+                    // Check for escaped single quote ''
+                    if i + 1 < chars.len() && chars[i + 1] == '\'' {
+                        i += 1;
+                        current.push(chars[i]);
+                    } else {
+                        break;
+                    }
+                }
+                i += 1;
+            }
+        }
+        // Double-quoted identifier
+        else if c == '"' {
+            current.push(c);
+            i += 1;
+            while i < chars.len() {
+                current.push(chars[i]);
+                if chars[i] == '"' {
+                    // Check for escaped double quote ""
+                    if i + 1 < chars.len() && chars[i + 1] == '"' {
+                        i += 1;
+                        current.push(chars[i]);
+                    } else {
+                        break;
+                    }
+                }
+                i += 1;
+            }
+        }
+        // Single-line comment
+        else if c == '-' && i + 1 < chars.len() && chars[i + 1] == '-' {
+            i += 2;
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            current.push(' ');
+            continue;
+        }
+        // Block comment
+        else if c == '/' && i + 1 < chars.len() && chars[i + 1] == '*' {
+            i += 2;
+            while i + 1 < chars.len() {
+                if chars[i] == '*' && chars[i + 1] == '/' {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            current.push(' ');
+            continue;
+        }
+        // Statement separator
+        else if c == ';' && !(oracle && is_oracle_block(current.trim())) {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                statements.push(trimmed);
+            }
+            current.clear();
+        } else {
+            current.push(c);
+        }
+
+        i += 1;
+    }
+
+    // Last statement (after final semicolon or no trailing semicolon)
+    let trimmed = current.trim().to_string();
+    if !trimmed.is_empty() {
+        statements.push(trimmed);
+    }
+
+    statements
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn comments_preserve_token_boundaries() {
+        assert_eq!(
+            split_sql_statements("SELECT/*gap*/1; SELECT--gap\n2;"),
+            ["SELECT 1", "SELECT \n2"]
+        );
+        assert_eq!(split_sql_statements("SELECT 1/*gap*/+2"), ["SELECT 1 +2"]);
+    }
+
+    #[test]
+    fn oracle_blocks_keep_internal_semicolons_and_strip_slash() {
+        let sql = "CREATE OR REPLACE PROCEDURE p AS\nBEGIN\n NULL;\nEND;\n/\nSELECT 1 FROM dual;";
+        let statements = split_sql_statements_for_dialect(sql, true);
+        assert_eq!(statements.len(), 2);
+        assert!(statements[0].ends_with("END;"));
+        assert_eq!(statements[1], "SELECT 1 FROM dual");
+        assert_eq!(
+            split_sql_statements_for_dialect("BEGIN NULL; END;", true),
+            ["BEGIN NULL; END;"]
+        );
+    }
+
+    #[test]
+    fn oracle_alternative_quotes_and_types_are_preserved() {
+        let statements = split_sql_statements_for_dialect("SELECT q'[it's;a;value]' FROM dual; CREATE TYPE price AS OBJECT(n NUMBER);\n/\nSELECT 2 FROM dual;", true);
+        assert_eq!(statements.len(), 3);
+        assert!(statements[0].contains("it's;a;value"));
+        assert!(statements[1].ends_with("NUMBER);"));
+    }
+
+    #[test]
+    fn bridge_values_preserve_booleans_and_structured_data() {
+        let result = JdbcBridgeAdapter::parse_query_result(serde_json::json!({
+            "columns": ["flag", "data", "missing"],
+            "rows": [[true, {"city": "杭州"}, null]],
+        }))
+        .unwrap();
+        assert_eq!(result.rows[0]["flag"], QueryValue::Bool(true));
+        assert_eq!(
+            result.rows[0]["data"],
+            QueryValue::String("{\"city\":\"杭州\"}".into())
+        );
+        assert_eq!(result.rows[0]["missing"], QueryValue::Null);
+    }
+
+    #[test]
+    fn test_split_single_statement() {
+        let stmts = split_sql_statements("SELECT * FROM users");
+        assert_eq!(stmts, vec!["SELECT * FROM users"]);
+    }
+
+    #[test]
+    fn test_split_with_trailing_semicolon() {
+        let stmts = split_sql_statements("SELECT * FROM users;");
+        assert_eq!(stmts, vec!["SELECT * FROM users"]);
+    }
+
+    #[test]
+    fn test_split_multi_statement() {
+        let stmts = split_sql_statements(
+            "CREATE TABLE t (id INT); INSERT INTO t VALUES (1); SELECT * FROM t",
+        );
+        assert_eq!(
+            stmts,
+            vec![
+                "CREATE TABLE t (id INT)",
+                "INSERT INTO t VALUES (1)",
+                "SELECT * FROM t",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_split_comment_statement() {
+        let stmts =
+            split_sql_statements("CREATE TABLE t (id INT);\nCOMMENT ON TABLE t IS 'hello';");
+        assert_eq!(
+            stmts,
+            vec!["CREATE TABLE t (id INT)", "COMMENT ON TABLE t IS 'hello'",]
+        );
+    }
+
+    #[test]
+    fn test_split_with_semicolon_in_string() {
+        let stmts = split_sql_statements("SELECT 'hello;world' AS x");
+        assert_eq!(stmts, vec!["SELECT 'hello;world' AS x"]);
+    }
+
+    #[test]
+    fn test_skip_empty_statements() {
+        let stmts = split_sql_statements(";;SELECT 1;;;");
+        assert_eq!(stmts, vec!["SELECT 1"]);
+    }
+
+    #[test]
+    fn test_split_complex_ddl() {
+        let sql = "CREATE TABLE SYSDBA.CLASSES (\n    class_id INT PRIMARY KEY\n);\nCOMMENT ON TABLE SYSDBA.CLASSES IS '班级信息表';\nCOMMENT ON COLUMN SYSDBA.CLASSES.class_id IS '班级ID';";
+        let stmts = split_sql_statements(sql);
+        assert_eq!(stmts.len(), 3);
+        assert!(stmts[0].starts_with("CREATE TABLE"));
+        assert!(stmts[1].starts_with("COMMENT ON TABLE"));
+        assert!(stmts[2].starts_with("COMMENT ON COLUMN"));
+    }
+
+    #[test]
+    fn test_split_dollar_sign_is_not_comment() {
+        let stmts = split_sql_statements("SELECT * FROM t WHERE x = 1; -- comment\nSELECT 2");
+        assert_eq!(stmts.len(), 2);
+        assert_eq!(stmts[0], "SELECT * FROM t WHERE x = 1");
+        assert_eq!(stmts[1], "SELECT 2");
+    }
+}
+
+impl Drop for JdbcBridgeAdapter {
+    /// Best-effort pool release for adapters dropped without `disconnect()`.
+    ///
+    /// The bridge process outlives single connections now, so a leaked pool would
+    /// keep the database open (and a DuckDB file locked) for the rest of the
+    /// session. The "Test connection" path is the main caller of this.
+    fn drop(&mut self) {
+        let (Some(launcher), Some(conn_id)) = (self.launcher.take(), self.conn_id.take()) else {
+            return;
+        };
+
+        let request = JdbcRequest::new(
+            JdbcMethod::Disconnect,
+            serde_json::json!({ "conn_id": conn_id }),
+        );
+
+        if let Ok(mut guard) = launcher.try_lock() {
+            let _ = guard.send_request(&request);
+            return;
+        }
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let mut guard = launcher.lock().await;
+                let _ = guard.send_request(&request);
+            });
+        }
+    }
+}

@@ -1,0 +1,481 @@
+<script setup lang="ts">
+import type { LlmProvider } from '@/store/appStore'
+import { ulid } from 'ulidx'
+import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { SettingsFeedback } from '@/components/settings'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { toast } from '@/composables/useNotifications'
+import { useAppStore } from '@/store/appStore'
+
+const props = defineProps<{
+  open: boolean
+  provider?: LlmProvider | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'close'): void
+}>()
+
+const { t } = useI18n()
+const appStore = useAppStore()
+
+// ── Presets ───────────────────────────────────────────────────────────────────
+
+type Preset = {
+  id: string
+  name: string
+  apiCompatibility: string
+  baseUrl: string
+  kind: string
+}
+
+const presets = computed<Preset[]>(() => [
+  { id: 'openai', name: 'OpenAI', apiCompatibility: 'openai', baseUrl: 'https://api.openai.com/v1', kind: 'openai' },
+  { id: 'deepseek', name: 'DeepSeek', apiCompatibility: 'openai', baseUrl: 'https://api.deepseek.com/v1', kind: 'deepseek' },
+  { id: 'openrouter', name: 'OpenRouter', apiCompatibility: 'openai', baseUrl: 'https://openrouter.ai/api/v1', kind: 'openrouter' },
+  { id: 'requesty', name: 'Requesty', apiCompatibility: 'openai', baseUrl: 'https://router.requesty.ai/v1', kind: 'requesty' },
+  { id: 'opper', name: 'Opper', apiCompatibility: 'openai', baseUrl: 'https://api.opper.ai/v3/compat', kind: 'opper' },
+  { id: 'api-route', name: 'API Route', apiCompatibility: 'openai', baseUrl: 'https://global.api-route.com/v1', kind: 'api-route' },
+  { id: 'cheaper-inference', name: 'Cheaper Inference', apiCompatibility: 'openai', baseUrl: 'https://api.cheaperinference.com/v1', kind: 'cheaper-inference' },
+  { id: 'runcrate', name: 'Runcrate', apiCompatibility: 'openai', baseUrl: 'https://api.runcrate.ai/v1', kind: 'runcrate' },
+  { id: 'anthropic', name: 'Anthropic', apiCompatibility: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', kind: 'anthropic' },
+  { id: 'gemini', name: 'Google Gemini', apiCompatibility: 'openai', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', kind: 'gemini' },
+  { id: 'grok', name: 'Grok', apiCompatibility: 'openai', baseUrl: 'https://api.x.ai/v1', kind: 'grok' },
+  { id: 'mistral', name: 'Mistral', apiCompatibility: 'openai', baseUrl: 'https://api.mistral.ai/v1', kind: 'mistral' },
+  { id: 'azure-openai', name: 'Azure OpenAI', apiCompatibility: 'openai', baseUrl: '', kind: 'azure-openai' },
+  { id: 'ollama', name: 'Ollama', apiCompatibility: 'openai', baseUrl: 'http://127.0.0.1:11434', kind: 'ollama' },
+  { id: 'lm-studio', name: 'LM Studio', apiCompatibility: 'openai', baseUrl: 'http://127.0.0.1:1234/v1', kind: 'lm-studio' },
+  { id: 'custom-openai', name: 'Custom OpenAI', apiCompatibility: 'openai', baseUrl: '', kind: 'custom-openai' },
+  { id: 'custom-anthropic', name: 'Custom Anthropic', apiCompatibility: 'anthropic', baseUrl: '', kind: 'custom-anthropic' },
+])
+
+// ── Proxy mode options ────────────────────────────────────────────────────────
+
+const proxyModes = ['none', 'system', 'manual'] as const
+
+const proxyModeLabels: Record<string, string> = {
+  none: 'None',
+  system: 'System',
+  manual: 'Manual',
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const API_KEY_MASK = '••••••••••••'
+const API_KEY_SENTINEL = '__SENTINEL__'
+
+// ── Reactive state ────────────────────────────────────────────────────────────
+
+const draft = ref<LlmProvider>(createEmptyDraft())
+const showKey = ref(false)
+const formErrors = ref<Record<string, string>>({})
+const selectedPresetId = ref<string | null>(null)
+
+// ── Computed ──────────────────────────────────────────────────────────────────
+
+const isEdit = computed(() => props.provider != null)
+
+const isCustomProvider = computed(() =>
+  selectedPresetId.value?.startsWith('custom-') ?? false,
+)
+
+const isApiCompatibilityReadonly = computed(() => {
+  if (isEdit.value)
+    return true
+  if (!selectedPresetId.value)
+    return false
+  return !selectedPresetId.value.startsWith('custom-')
+})
+
+const contextWindowInput = computed({
+  get: () => draft.value.contextWindowOverride?.toString() ?? '',
+  set: (val: string) => {
+    const num = Number.parseInt(val, 10)
+    draft.value.contextWindowOverride = Number.isNaN(num) ? undefined : num
+  },
+})
+
+const modelsInput = computed({
+  get: () => (draft.value.models ?? []).join(', '),
+  set: (val: string) => {
+    draft.value.models = val
+      .split(',')
+      .map(m => m.trim())
+      .filter(Boolean)
+  },
+})
+
+const apiKeyDisplayValue = computed({
+  get: () => {
+    if (draft.value.apiKey !== API_KEY_SENTINEL)
+      return draft.value.apiKey
+    if (showKey.value) {
+      const original = props.provider?.apiKey ?? ''
+      return original || API_KEY_MASK
+    }
+    return API_KEY_MASK
+  },
+  set: (val: string) => {
+    if (val === API_KEY_MASK || val === '')
+      return
+    draft.value.apiKey = val
+  },
+})
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function createEmptyDraft(): LlmProvider {
+  return {
+    id: ulid(),
+    kind: '',
+    name: '',
+    apiCompatibility: '',
+    apiKey: '',
+    baseUrl: '',
+    enabled: true,
+    proxy: '',
+    proxyMode: 'none',
+    contextWindowOverride: undefined,
+  }
+}
+
+function resetForm(provider?: LlmProvider | null) {
+  showKey.value = false
+  formErrors.value = {}
+  selectedPresetId.value = null
+
+  if (provider) {
+    draft.value = {
+      ...provider,
+      // Use sentinel to mask existing API key
+      apiKey: provider.apiKey ? API_KEY_SENTINEL : '',
+      proxy: provider.proxy ?? '',
+      proxyMode: provider.proxyMode ?? 'none',
+      contextWindowOverride: provider.contextWindowOverride ?? undefined,
+    }
+    // Derive the matching preset id from the provider's kind
+    const match = presets.value.find(p => p.id === provider.kind)
+      ?? presets.value.find(p => p.apiCompatibility === provider.apiCompatibility && !p.id.startsWith('custom-'))
+    selectedPresetId.value = match ? match.id : 'custom-openai'
+  }
+  else {
+    draft.value = createEmptyDraft()
+  }
+}
+
+function beginReplaceApiKey() {
+  if (draft.value.apiKey === API_KEY_SENTINEL) {
+    draft.value.apiKey = ''
+    showKey.value = false
+  }
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+function selectPreset(preset: Preset) {
+  selectedPresetId.value = preset.id
+  draft.value.kind = preset.kind
+  draft.value.name = preset.name
+  draft.value.apiCompatibility = preset.apiCompatibility
+  draft.value.baseUrl = preset.baseUrl
+  formErrors.value = {}
+}
+
+function validateForm(): boolean {
+  const errors: Record<string, string> = {}
+
+  if (!draft.value.name.trim()) {
+    errors.name = t('pages.settings.ai.form.validation.nameRequired')
+  }
+
+  if (!draft.value.apiCompatibility.trim()) {
+    errors.apiCompatibility = t('pages.settings.ai.form.validation.apiCompatibilityRequired')
+  }
+
+  if (draft.value.baseUrl && !/^https?:\/\//.test(draft.value.baseUrl)) {
+    errors.baseUrl = t('pages.settings.ai.form.validation.baseUrlInvalid')
+  }
+
+  formErrors.value = errors
+  return Object.keys(errors).length === 0
+}
+
+const saving = ref(false)
+const saveError = ref('')
+
+const handleSave = async () => {
+  if (saving.value)
+    return
+  if (!validateForm())
+    return
+
+  // Resolve API key: if unchanged (sentinel or user clicked but didn't type), keep original
+  let resolvedApiKey = draft.value.apiKey
+  if (resolvedApiKey === API_KEY_SENTINEL || (!resolvedApiKey && isEdit.value)) {
+    resolvedApiKey = props.provider?.apiKey ?? ''
+  }
+
+  const cleaned: LlmProvider = {
+    ...draft.value,
+    apiKey: resolvedApiKey,
+    name: draft.value.name.trim(),
+    proxy: draft.value.proxy?.trim() || undefined,
+    proxyMode: draft.value.proxyMode ?? 'none',
+    contextWindowOverride: draft.value.contextWindowOverride || undefined,
+  }
+
+  saving.value = true
+  saveError.value = ''
+  try {
+    if (isEdit.value) {
+      await appStore.updateProvider(draft.value.id, { ...cleaned })
+    }
+    else {
+      await appStore.addProvider(cleaned)
+    }
+
+    toast.success(t('pages.settings.feedback.saved'))
+    emit('close')
+  }
+  catch (error) {
+    saveError.value = error instanceof Error ? error.message : String(error)
+  }
+  finally {
+    saving.value = false
+  }
+}
+
+// ── Watchers ──────────────────────────────────────────────────────────────────
+
+watch(() => props.open, (open) => {
+  if (open) {
+    saveError.value = ''
+    resetForm(props.provider)
+    // Always start with the key masked.
+  }
+})
+</script>
+
+<template>
+  <Dialog :open="open" @update:open="!saving && $emit('close')">
+    <DialogContent class="sm:max-w-[480px]">
+      <DialogTitle>
+        {{ isEdit ? t('pages.settings.ai.form.editTitle') : t('pages.settings.ai.form.addTitle') }}
+      </DialogTitle>
+      <DialogDescription>
+        {{ t('pages.settings.ai.form.providerTypeHelp') }}
+      </DialogDescription>
+
+      <!-- Provider type selector — only in create mode -->
+      <div v-if="!isEdit" class="space-y-2">
+        <Label>{{ t('pages.settings.ai.form.providerType') }}</Label>
+        <Select
+          :model-value="selectedPresetId ?? ''"
+          @update:model-value="(val: string) => {
+            const preset = presets.find(p => p.id === val)
+            if (preset) selectPreset(preset)
+          }"
+        >
+          <SelectTrigger>
+            <SelectValue :placeholder="t('pages.settings.ai.form.providerTypeHelp')" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem
+              v-for="preset in presets"
+              :key="preset.id"
+              :value="preset.id"
+            >
+              {{ preset.name }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <!-- Form fields -->
+      <div class="space-y-4">
+        <!-- Display Name -->
+        <div class="space-y-1">
+          <Label for="name">{{ t('pages.settings.ai.form.name') }}</Label>
+          <Input
+            id="name"
+            v-model="draft.name"
+            :placeholder="t('pages.settings.ai.form.namePlaceholder')"
+            :class="{ 'border-destructive': formErrors.name }"
+          />
+          <p v-if="formErrors.name" class="text-sm text-destructive-text">
+            {{ formErrors.name }}
+          </p>
+        </div>
+
+        <!-- API Compatibility (only for custom providers) -->
+        <div v-if="isCustomProvider" class="space-y-1">
+          <Label for="api-compatibility">{{ t('pages.settings.ai.form.apiCompatibility') }}</Label>
+          <Input
+            id="api-compatibility"
+            v-model="draft.apiCompatibility"
+            :readonly="isApiCompatibilityReadonly"
+            :placeholder="t('pages.settings.ai.form.apiCompatibilityPlaceholder')"
+            :class="{
+              'border-destructive': formErrors.apiCompatibility,
+              'cursor-not-allowed opacity-60': isApiCompatibilityReadonly,
+            }"
+          />
+          <p v-if="formErrors.apiCompatibility" class="text-sm text-destructive-text">
+            {{ formErrors.apiCompatibility }}
+          </p>
+        </div>
+
+        <!-- API Key -->
+        <div class="space-y-1">
+          <Label for="api-key">{{ t('pages.settings.ai.form.apiKey') }}</Label>
+          <div class="relative">
+            <Input
+              id="api-key"
+              :model-value="apiKeyDisplayValue"
+              :type="showKey ? 'text' : 'password'"
+              :readonly="draft.apiKey === API_KEY_SENTINEL"
+              :placeholder="t('pages.settings.ai.form.apiKeyPlaceholder')"
+              class="pr-9"
+              autocomplete="off"
+              @update:model-value="(val) => apiKeyDisplayValue = String(val)"
+              @click="beginReplaceApiKey"
+            />
+            <button
+              type="button"
+              class="text-muted-foreground px-2.5 flex items-center inset-y-0 right-0 absolute hover:text-foreground"
+              :title="showKey ? t('pages.settings.ai.form.hideKey') : t('pages.settings.ai.form.showKey')"
+              @click="showKey = !showKey"
+            >
+              <!-- Eye icon (hidden → shown) -->
+              <svg
+                v-if="!showKey"
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <!-- Eye-off icon (shown → hidden) -->
+              <svg
+                v-else
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                <line x1="2" x2="22" y1="2" y2="22" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Base URL (only for custom providers) -->
+        <div v-if="isCustomProvider" class="space-y-1">
+          <Label for="base-url">{{ t('pages.settings.ai.form.baseUrl') }}</Label>
+          <Input
+            id="base-url"
+            v-model="draft.baseUrl"
+            :placeholder="t('pages.settings.ai.form.baseUrlPlaceholder')"
+            :class="{ 'border-destructive': formErrors.baseUrl }"
+          />
+          <p v-if="formErrors.baseUrl" class="text-sm text-destructive-text">
+            {{ formErrors.baseUrl }}
+          </p>
+        </div>
+
+        <!-- Proxy Mode + URL -->
+        <div class="space-y-2">
+          <Label>{{ t('pages.settings.ai.form.proxyMode') }}</Label>
+          <div class="p-0.5 rounded-lg bg-muted/60 inline-flex">
+            <button
+              v-for="mode in proxyModes"
+              :key="mode"
+              type="button"
+              class="text-sm font-medium px-3 py-1.5 rounded-md transition-colors" :class="[
+                draft.proxyMode === mode
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              ]"
+              @click="draft.proxyMode = mode"
+            >
+              {{ proxyModeLabels[mode] }}
+            </button>
+          </div>
+          <Input
+            v-if="draft.proxyMode === 'manual'"
+            v-model="draft.proxy"
+            :placeholder="t('pages.settings.ai.form.proxyPlaceholder')"
+          />
+        </div>
+
+        <!-- Context Window Override -->
+        <div class="space-y-1">
+          <Label for="context-window">{{ t('pages.settings.ai.form.contextWindow') }}</Label>
+          <Input
+            id="context-window"
+            v-model="contextWindowInput"
+            type="number"
+            step="1024"
+            min="1024"
+            placeholder="4096"
+          />
+        </div>
+
+        <!-- Models (manual entry) -->
+        <div class="space-y-1">
+          <Label for="models">{{ t('pages.settings.ai.form.models') }}</Label>
+          <Input
+            id="models"
+            v-model="modelsInput"
+            :placeholder="t('pages.settings.ai.form.modelsPlaceholder')"
+          />
+          <p class="text-xs text-muted-foreground">
+            {{ t('pages.settings.ai.form.modelsHelp') }}
+          </p>
+        </div>
+      </div>
+
+      <SettingsFeedback v-if="saving || saveError" :state="saveError ? 'error' : 'pending'" :label="t(`pages.settings.feedback.${saveError ? 'failed' : 'saving'}`)" :detail="saveError" />
+      <DialogFooter>
+        <Button variant="outline" :disabled="saving" @click="$emit('close')">
+          {{ t('common.buttons.cancel') }}
+        </Button>
+        <Button :disabled="saving" :aria-busy="saving" @click="handleSave">
+          {{ isEdit ? t('common.buttons.save') : t('pages.settings.ai.form.save') }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+</template>

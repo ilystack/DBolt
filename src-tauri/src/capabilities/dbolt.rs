@@ -1,0 +1,193 @@
+use std::sync::Arc;
+
+use serde_json::Value;
+use tauri_plugin_store::StoreExt;
+
+use data_studio_agent::capabilities::registry::CapabilityRegistry;
+use data_studio_agent::capabilities::types::{
+    Capability, CapabilityHandler, RiskLevel, SourceKind,
+};
+
+// ---------------------------------------------------------------------------
+// Connection store abstraction (testable via mockall)
+// ---------------------------------------------------------------------------
+
+#[cfg_attr(test, mockall::automock)]
+pub(crate) trait ConnectionStoreReader: Send + Sync {
+    fn get_connections(&self) -> Result<Value, String>;
+}
+
+pub(crate) struct TauriStoreReader;
+
+impl ConnectionStoreReader for TauriStoreReader {
+    fn get_connections(&self) -> Result<Value, String> {
+        let app = match crate::APP_HANDLE.get() {
+            Some(handle) => handle,
+            None => return Ok(Value::Array(vec![])),
+        };
+
+        let store = match app.store(".store.dat") {
+            Ok(s) => s,
+            Err(_) => return Ok(Value::Array(vec![])),
+        };
+
+        Ok(store.get("connections").unwrap_or(Value::Array(vec![])))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ListConnections handler
+// ---------------------------------------------------------------------------
+
+pub(crate) struct ListConnections {
+    store: Box<dyn ConnectionStoreReader>,
+}
+
+impl ListConnections {
+    pub(crate) fn new() -> Self {
+        Self {
+            store: Box::new(TauriStoreReader),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_store(store: Box<dyn ConnectionStoreReader>) -> Self {
+        Self { store }
+    }
+}
+
+#[async_trait::async_trait]
+impl CapabilityHandler for ListConnections {
+    async fn handle(
+        &self,
+        _args: &Value,
+        _connection_config: Option<&Value>,
+    ) -> Result<String, String> {
+        let connections = self.store.get_connections()?;
+
+        // Return only non-sensitive metadata: id, name, type
+        let safe_list: Vec<Value> = connections
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "id": c.get("id"),
+                            "name": c.get("name"),
+                            "type": c.get("db_type"),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(serde_json::to_string(&serde_json::json!({
+            "connections": safe_list
+        }))
+        .map_err(|e| e.to_string())?)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
+pub(crate) fn register_all(reg: &mut CapabilityRegistry) {
+    reg.register(Capability {
+        name: "dbolt__list_connections",
+        description:
+            "List all configured database connections in DBolt with their name, type, and connection id.",
+        handler: Arc::new(ListConnections::new()),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }),
+        risk_level: RiskLevel::Safe,
+        required_permission: "read",
+        source_kind: SourceKind::AppLocal,
+        tags: &["agent"],
+        parallel_ok: true,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_list_connections_returns_safe_list() {
+        let mut mock = MockConnectionStoreReader::new();
+        mock.expect_get_connections().return_once(|| {
+            Ok(json!([
+                {"id": 1, "name": "My PG", "db_type": "POSTGRESQL", "password": "secret"},
+                {"id": 2, "name": "My MySQL", "db_type": "MYSQL", "password": "s3cret"},
+            ]))
+        });
+
+        let handler = ListConnections::with_store(Box::new(mock));
+        let result = handler.handle(&json!({}), None).await;
+        assert!(result.is_ok(), "got: {:?}", result.err());
+
+        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let conns = parsed["connections"].as_array().unwrap();
+        assert_eq!(conns.len(), 2);
+
+        // Only safe fields should be present
+        assert_eq!(conns[0]["id"], 1);
+        assert_eq!(conns[0]["name"], "My PG");
+        assert_eq!(conns[0]["type"], "POSTGRESQL");
+        assert!(conns[0].get("password").is_none(), "password must not leak");
+    }
+
+    #[tokio::test]
+    async fn test_list_connections_empty() {
+        let mut mock = MockConnectionStoreReader::new();
+        mock.expect_get_connections().return_once(|| Ok(json!([])));
+
+        let handler = ListConnections::with_store(Box::new(mock));
+        let result = handler.handle(&json!({}), None).await;
+        assert!(result.is_ok());
+
+        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(parsed["connections"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_connections_store_error() {
+        let mut mock = MockConnectionStoreReader::new();
+        mock.expect_get_connections()
+            .return_once(|| Err("store error".to_string()));
+
+        let handler = ListConnections::with_store(Box::new(mock));
+        let result = handler.handle(&json!({}), None).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("store error"));
+    }
+
+    #[tokio::test]
+    async fn test_list_connections_filters_nulls() {
+        let mut mock = MockConnectionStoreReader::new();
+        mock.expect_get_connections().return_once(|| {
+            Ok(json!([
+                {"id": null, "name": null, "db_type": null},
+                {"id": 1, "name": "valid", "db_type": "PG"},
+            ]))
+        });
+
+        let handler = ListConnections::with_store(Box::new(mock));
+        let result = handler.handle(&json!({}), None).await;
+        assert!(result.is_ok());
+
+        let parsed: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let conns = parsed["connections"].as_array().unwrap();
+        assert_eq!(conns.len(), 2);
+        assert!(conns[0]["id"].is_null());
+        assert_eq!(conns[1]["name"], "valid");
+    }
+}
