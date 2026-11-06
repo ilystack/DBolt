@@ -178,6 +178,7 @@ fn tools_payload(policy: &AiPolicy) -> Value {
     })
 }
 
+#[allow(dead_code)]
 fn entitlement_denied_for(_session_confirmed: bool, _local_entitled: bool) -> bool {
     false
 }

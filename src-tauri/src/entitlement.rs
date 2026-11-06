@@ -1,4 +1,5 @@
 //! Entitlement & version-lock resolution.
+#![allow(dead_code, unused_imports)]
 //!
 //! The server owns all judgement semantics; the client only reads two
 //! server-computed fields from `GET /api/v1/subscriptions`:

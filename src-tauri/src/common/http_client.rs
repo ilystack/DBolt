@@ -96,6 +96,7 @@ pub fn system_proxy_for(host: &str, port: u16) -> Option<String> {
 
 /// Match a host against one macOS ExceptionsList entry: exact hostname,
 /// "*.suffix" wildcard, or IPv4 CIDR.
+#[allow(dead_code)]
 fn proxy_exempt_matches(host: &str, pattern: &str) -> bool {
     if let Some(rest) = pattern.strip_prefix("*.") {
         return host == rest || host.ends_with(&format!(".{}", rest));
