@@ -6,7 +6,7 @@
   "description": "DBolt — Free and Open Source agentic cross-platform SQL database GUI client with AI for 70+ databases.",
   "author": "DBolt Contributors",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/dbolt-app/dbolt",
+  "homepage": "https://github.com/ilystack/DBolt",
   "repository": {
     "type": "git",
     "url": "https://github.com/ilystack/DBolt.git"

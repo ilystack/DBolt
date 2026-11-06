@@ -27,6 +27,7 @@ export default antfu({
     'AGENTS.md',
     'docs/**',
     'src-tauri/gen/**',
+    'src-tauri/crates/**',
   ],
   rules: {
     // AGENTS.md prefers const-arrow declarations; the antfu preset's
