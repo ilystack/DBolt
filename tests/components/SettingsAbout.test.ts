@@ -58,8 +58,8 @@ it('shows the installed app version and checks automatically without installing'
   expect(updater.downloadAndInstall).not.toHaveBeenCalled()
   expect(wrapper.text()).not.toContain('You have the latest version')
   expect(wrapper.findAll('a').map(link => link.attributes('href'))).toEqual([
-    'https://github.com/dbolt-app/dbolt',
-    'https://github.com/dbolt-app/dbolt',
+    'https://github.com/ilystack/DBolt',
+    'https://github.com/ilystack/DBolt',
   ])
   wrapper.unmount()
 })

@@ -13,7 +13,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { ProBadge } from '@/components/upgrade'
 import { useDatabaseIcon } from '@/composables/useDatabaseIcon'
 import { ConnectionStatus, DatabaseType, formatServerVersion, getConnectionStrategy, useEntitlementStore } from '@/store'
 
@@ -233,7 +232,6 @@ const connectTooltip = computed(() =>
               <Badge variant="outline" class="text-xs">
                 <span class="i-carbon-locked mr-0.5 h-3 w-3" />
                 SSH
-                <ProBadge v-if="!entitlementStore.isLocalUltimate" size="xs" class="ml-1" />
               </Badge>
             </TooltipTrigger>
             <TooltipContent>

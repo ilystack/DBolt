@@ -97,16 +97,16 @@ onMounted(() => {
       </div>
       <div class="border-t border-border/40" />
       <a
-        href="https://github.com/dbolt-app/dbolt" target="_blank" rel="noopener noreferrer"
+        href="https://github.com/ilystack/DBolt" target="_blank" rel="noopener noreferrer"
         class="text-sm p-2 rounded-md flex flex-wrap gap-2 transition-colors items-center justify-between -mx-2 hover:bg-muted/50"
       >
         <span class="font-medium">{{ t('pages.settings.about.repository') }}</span>
         <span class="text-muted-foreground flex gap-2 items-center">
-          dbolt-app/dbolt <span class="i-carbon-launch h-4 w-4" aria-hidden="true" />
+          ilystack/DBolt <span class="i-carbon-launch h-4 w-4" aria-hidden="true" />
         </span>
       </a>
       <a
-        href="https://github.com/dbolt-app/dbolt" target="_blank" rel="noopener noreferrer"
+        href="https://github.com/ilystack/DBolt" target="_blank" rel="noopener noreferrer"
         class="text-sm p-2 rounded-md flex flex-wrap gap-2 transition-colors items-center justify-between -mx-2 hover:bg-muted/50"
       >
         <span class="font-medium">{{ t('pages.settings.about.website') }}</span>

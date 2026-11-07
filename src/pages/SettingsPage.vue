@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 // Separator is rendered inline as a styled div
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { PaidGate, ProBadge } from '@/components/upgrade'
 import { ThemeType, useAppStore } from '@/store/appStore'
 import { useEntitlementStore } from '@/store/entitlementStore'
 import AiSettings from '@/views/setting/ai-settings.vue'
@@ -173,11 +172,9 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
             </TabsTrigger>
             <TabsTrigger value="ai" class="gap-1.5">
               {{ t('pages.settings.ai.tabLabel') }}
-              <ProBadge v-if="!entitlementStore.isLocalUltimate" size="dot" />
             </TabsTrigger>
             <TabsTrigger value="mcp" class="gap-1.5">
               {{ t('pages.settings.mcp.title') }}
-              <ProBadge v-if="!entitlementStore.isLocalUltimate" size="dot" />
             </TabsTrigger>
             <TabsTrigger value="jre">
               {{ t('pages.settings.jre.title') }}
@@ -503,16 +500,12 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
 
           <!-- AI Tab -->
           <TabsContent value="ai" class="mt-0">
-            <PaidGate feature="ai">
-              <AiSettings />
-            </PaidGate>
+            <AiSettings />
           </TabsContent>
 
           <!-- MCP Bridge Tab -->
           <TabsContent value="mcp" class="mt-0">
-            <PaidGate feature="mcp_bridge">
-              <McpBridge />
-            </PaidGate>
+            <McpBridge />
           </TabsContent>
 
           <!-- JRE & Drivers Tab -->

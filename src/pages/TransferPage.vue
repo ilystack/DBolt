@@ -8,7 +8,6 @@ import ImportWizard from '@/components/transfer/import/ImportWizard.vue'
 import TaskManagerButton from '@/components/transfer/tasks/TaskManagerButton.vue'
 import TaskManagerPanel from '@/components/transfer/tasks/TaskManagerPanel.vue'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { PaidGate } from '@/components/upgrade'
 import { useTransferStore } from '@/store/transferStore'
 
 const { t } = useI18n()
@@ -29,8 +28,7 @@ const tabConfig = computed(() => [
 
 <template>
   <AppLayout>
-    <PaidGate feature="transfer" class="h-full w-full">
-      <div class="bg-background flex flex-col h-full">
+    <div class="bg-background flex flex-col h-full">
         <!-- Header -->
         <header class="px-6 py-3 border-b border-border/40 flex shrink-0 items-center justify-between">
           <div class="flex gap-3 items-center">
@@ -76,7 +74,6 @@ const tabConfig = computed(() => [
         <!-- Task Manager Panel -->
         <TaskManagerPanel v-model:open="showTaskManager" />
       </div>
-    </PaidGate>
   </AppLayout>
 </template>
 

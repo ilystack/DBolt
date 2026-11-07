@@ -6,10 +6,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ChatPanel from '@/components/chat-panel.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
-// NOTE: without this import the <PaidGate> tag resolves to an unknown element
-// and the page renders its content completely ungated (no auto-import plugin
-// exists in this repo — components must be imported explicitly).
-import { PaidGate } from '@/components/upgrade'
 import { disposeAgentRuntime, initAgentRuntime } from '@/composables/agentRuntime'
 import { useDatabaseIcon } from '@/composables/useDatabaseIcon'
 import { useDataStudioChatAgent } from '@/composables/useDataStudioChatAgent'
@@ -286,8 +282,7 @@ function syncAllProviderModels() {
 
 <template>
   <AppLayout :hide-ai-button="true">
-    <PaidGate feature="ai" class="h-full w-full">
-      <div class="bg-background flex h-full">
+    <div class="bg-background flex h-full">
         <!-- History Panel (left sidebar) -->
         <div v-if="historyPanelOpen" class="border-r border-border shrink-0 w-72 overflow-y-auto">
           <SessionHistoryPanel
@@ -537,10 +532,9 @@ function syncAllProviderModels() {
           </div>
         </div>
 
-        <!-- Modals -->
-        <ModifySourceModal v-model:open="showModifyModal" :source-idx="selectedSourceIdx" />
-      </div>
-    </PaidGate>
+      <!-- Modals -->
+      <ModifySourceModal v-model:open="showModifyModal" :source-idx="selectedSourceIdx" />
+    </div>
   </AppLayout>
 </template>
 

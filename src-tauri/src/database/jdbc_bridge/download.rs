@@ -211,7 +211,7 @@ pub async fn download_bridge_plugin() -> DbResult<()> {
     }
 
     let url = format!(
-        "https://github.com/dbolt-app/dbolt/releases/download/v{}/jdbc-bridge-{}.jar",
+        "https://github.com/ilystack/DBolt/releases/download/v{}/jdbc-bridge-{}.jar",
         APP_VERSION, APP_VERSION
     );
 
