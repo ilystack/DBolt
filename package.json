@@ -1,9 +1,9 @@
 {
   "name": "dbolt",
   "type": "module",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
-  "description": "DBolt — Free and Open Source agentic cross-platform SQL database GUI client with AI for 70+ databases.",
+  "description": "DBolt: Free and Open Source agentic cross-platform SQL database GUI client with AI for 70+ databases.",
   "author": "DBolt Contributors",
   "license": "Apache-2.0",
   "homepage": "https://github.com/ilystack/DBolt",
