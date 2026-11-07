@@ -134,6 +134,9 @@
     "vue-tsc": "^2.1.10"
   },
   "overrides": {
-    "dompurify": "$dompurify"
+    "dompurify": "$dompurify",
+    "@vitest/eslint-plugin": {
+      "typescript": "$typescript"
+    }
   }
 }

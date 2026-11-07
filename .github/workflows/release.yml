@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Setup Rust
@@ -48,7 +48,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libxdo-dev build-essential curl wget file libssl-dev libayatana-appindicator3-dev
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build and package desktop client
         uses: tauri-apps/tauri-action@v1
@@ -60,11 +60,33 @@ jobs:
           releaseBody: |
             ### DBolt ${{ github.ref_name }}
 
-            Free, fast, open-source database client with built-in AI Data Studio.
+            Free, fast, open-source database client with built-in AI Data Studio for 70+ databases.
+
+            #### What's New in this Release
+
+            - **Smart Mock Data Generator (1-Click Seeder)**
+              - Generate realistic synthetic test data tailored to table columns and constraints directly from the table context menu or table view toolbar.
+              - Built-in generators for names, emails, UUIDs, timestamps, phone numbers, prices, and status enums.
+              - 1-click direct batch insertion into database or preview in a new SQL query tab.
+
+            - **Visual Explain Plan & AI Query Optimizer**
+              - Interactive execution plan visualizer with automated bottleneck detection (sequential scans, high-cost sorts, stale statistics).
+              - Automated Performance Health Score (0-100).
+              - 1-click recommended index DDL generation and AI query rewrite prompt builder.
+
+            - **Strict Zero Data Leak Guard & Privacy Architecture**
+              - Strict guarantee that production table rows and cell values are never uploaded to AI providers.
+              - Context transmission is strictly limited to schema structure and column types.
+              - 100% air-gapped local model execution with Ollama or LM Studio on localhost.
+
+            - **UI and UX Refinements**
+              - Edge-to-edge chat workspace with dynamic panel resizing and collapsible history drawer.
+              - Streamlined borderless chat toolbar and Lucide bot icon.
+              - Restructured settings navigation with dedicated Appearance and About tabs.
 
             #### Download Binaries
             - Windows: `.exe` (NSIS Installer)
-            - macOS: `.dmg` (Universal binary for Apple Silicon & Intel)
+            - macOS: `.dmg` (Universal binary for Apple Silicon and Intel)
             - Linux: `.AppImage` and `.deb`
           releaseDraft: false
           prerelease: false
