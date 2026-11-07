@@ -123,7 +123,7 @@ function isInsideComment(text: string, start: number, _end: number, offset: numb
 
 /** Strip quotes from a quoted identifier and collapse doubled quote chars. */
 function unquote(name: string): string {
-  if (name.length >= 2 && QUOTE_CHARS.includes(name[0]) && name[name.length - 1] === name[0]) {
+  if (name.length >= 2 && QUOTE_CHARS.includes(name[0]) && name.at(-1) === name[0]) {
     const q = name[0]
     const inner = name.slice(1, -1)
     return inner.split(q + q).join(q)
@@ -205,7 +205,7 @@ function extractTableRefs(text: string, start: number, end: number): TableRef[] 
     // Parse schema.table / table out of the raw name (respecting quotes).
     const parts = rawName.match(/"[^"]*"|`[^`]*`|[\p{L}\p{N}_$]+/gu) ?? []
     const names = parts.map(unquote)
-    const table = names.length > 0 ? names[names.length - 1] : ''
+    const table = names.length > 0 ? names.at(-1) : ''
     const schema = names.length > 1 ? names[names.length - 2] : undefined
     if (!table)
       continue
@@ -279,7 +279,7 @@ export function analyzeCompletionContext(text: string, offset: number): Completi
     }
   }
   if (!activeTable && !isAfterDot && tableRefs.length > 0) {
-    activeTable = tableRefs[tableRefs.length - 1]
+    activeTable = tableRefs.at(-1)
   }
 
   return {

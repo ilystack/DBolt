@@ -107,7 +107,7 @@ let probeTimer: ReturnType<typeof setTimeout> | undefined
 watch(() => props.modelValue, (value) => {
   if (probeTimer)
     clearTimeout(probeTimer)
-  probeTimer = setTimeout(() => runProbe(value ?? ''), 250)
+  probeTimer = setTimeout(runProbe, 250, value ?? '')
 })
 
 watch(assessment, value => emit('status', value), { immediate: true })

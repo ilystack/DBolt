@@ -3,9 +3,9 @@ import type { ObjectInfo } from '@/datasources/browseApi'
 import type { TableInfo } from '@/store/databaseStore'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import MockDataGeneratorModal from '@/components/database-browser/MockDataGeneratorModal.vue'
 import { Input } from '@/components/ui/input'
 import { ConnectionStatus, useConnectionStore, useDatabaseStore } from '@/store'
-import MockDataGeneratorModal from '@/components/database-browser/MockDataGeneratorModal.vue'
 import TreeGroup from './TreeGroup.vue'
 
 type Props = {
@@ -806,7 +806,7 @@ defineExpose({ refresh })
           class="text-sm px-2 py-1.5 rounded-sm flex cursor-pointer items-center hover:text-accent-foreground hover:bg-accent"
           @click="handleContextAction('generateMockData')"
         >
-          <span class="i-carbon-magic-wand mr-2 h-3.5 w-3.5 text-primary" />
+          <span class="i-carbon-magic-wand text-primary mr-2 h-3.5 w-3.5" />
           {{ t('components.databaseBrowser.contextMenu.generateMockData') }}
         </div>
         <div class="my-1 bg-border h-px" />

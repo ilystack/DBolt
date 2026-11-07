@@ -159,7 +159,6 @@ const emptyHint = computed(() =>
     : t('dataStudio.agent.noSource'),
 )
 
-
 const availableAddConnections = computed(() => {
   const sessionConnIds = new Set(
     activeSessionSources.value.flatMap((s) => {
@@ -240,7 +239,6 @@ async function confirmAddSource() {
   }
 }
 
-
 async function switchSession(sessionId: string) {
   dataStudioStore.setActiveSession(sessionId)
   await dataStudioStore.reloadSessionMessages(sessionId)
@@ -314,11 +312,11 @@ function syncAllProviderModels() {
 
 <template>
   <AppLayout :hide-ai-button="true">
-    <div class="bg-background flex h-full w-full overflow-hidden relative">
+    <div class="bg-background flex h-full w-full relative overflow-hidden">
       <!-- Main Conversation Area -->
-      <div class="flex flex-1 flex-col min-w-0 h-full w-full relative">
+      <div class="flex flex-1 flex-col h-full min-w-0 w-full relative">
         <!-- Floating top-right controls (clean, borderless) -->
-        <div class="h-10 px-4 flex items-center justify-end shrink-0 gap-1.5 z-10 w-full">
+        <div class="px-4 flex shrink-0 gap-1.5 h-10 w-full items-center justify-end z-10">
           <button
             v-if="isLoading"
             class="text-destructive rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:bg-destructive/10"
@@ -498,7 +496,7 @@ function syncAllProviderModels() {
                   @click.stop="modeMenuOpen = !modeMenuOpen"
                 >
                   <span>{{ currentMode }}</span>
-                  <ChevronDown class="h-3 w-3 opacity-60 transition-transform duration-150" :class="{ 'rotate-180': modeMenuOpen }" />
+                  <ChevronDown class="opacity-60 h-3 w-3 transition-transform duration-150" :class="{ 'rotate-180': modeMenuOpen }" />
                 </button>
 
                 <Transition name="menu-rise">
@@ -510,11 +508,11 @@ function syncAllProviderModels() {
                       :class="{ 'mode-menu-row--active': currentMode === opt.value }"
                       @click="selectMode(opt.value)"
                     >
-                      <div class="flex items-center gap-2">
+                      <div class="flex gap-2 items-center">
                         <component :is="opt.icon" class="h-3.5 w-3.5" />
-                        <span class="font-medium text-xs">{{ opt.label }}</span>
+                        <span class="text-xs font-medium">{{ opt.label }}</span>
                       </div>
-                      <Check v-if="currentMode === opt.value" class="h-3.5 w-3.5 text-foreground ml-auto" />
+                      <Check v-if="currentMode === opt.value" class="text-foreground ml-auto h-3.5 w-3.5" />
                     </button>
                   </div>
                 </Transition>
@@ -528,7 +526,7 @@ function syncAllProviderModels() {
       <Transition name="sidebar-slide">
         <div
           v-if="historyPanelOpen"
-          class="border-l border-border shrink-0 w-72 md:w-80 h-full overflow-y-auto bg-background transition-all duration-200"
+          class="border-l border-border bg-background shrink-0 h-full w-72 transition-all duration-200 overflow-y-auto md:w-80"
         >
           <SessionHistoryPanel
             @select="switchSession"

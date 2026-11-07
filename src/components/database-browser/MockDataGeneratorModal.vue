@@ -36,26 +36,26 @@ const emit = defineEmits<{
 
 const tabStore = useTabStore()
 
-type GeneratorType =
-  | 'auto_increment'
-  | 'uuid'
-  | 'full_name'
-  | 'first_name'
-  | 'last_name'
-  | 'email'
-  | 'phone'
-  | 'timestamp'
-  | 'date'
-  | 'status'
-  | 'price'
-  | 'integer'
-  | 'boolean'
-  | 'city'
-  | 'country'
-  | 'sentence'
-  | 'null'
+type GeneratorType
+  = 'auto_increment'
+    | 'uuid'
+    | 'full_name'
+    | 'first_name'
+    | 'last_name'
+    | 'email'
+    | 'phone'
+    | 'timestamp'
+    | 'date'
+    | 'status'
+    | 'price'
+    | 'integer'
+    | 'boolean'
+    | 'city'
+    | 'country'
+    | 'sentence'
+    | 'null'
 
-interface ColumnConfig {
+type ColumnConfig = {
   name: string
   dataType: string
   nullable: boolean
@@ -189,7 +189,9 @@ const DESCRIPTIONS = [
 ]
 
 function generateValue(generator: GeneratorType, index: number): string | number | boolean | null {
-  const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
+  function pick<T>(arr: T[]): T {
+    return arr[Math.floor(Math.random() * arr.length)]
+  }
 
   switch (generator) {
     case 'auto_increment':
@@ -331,17 +333,17 @@ async function insertDirectly() {
 
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent class="p-0 flex flex-col gap-0 max-h-[88vh] max-w-4xl overflow-hidden bg-background border rounded-xl shadow-2xl">
+    <DialogContent class="p-0 border rounded-xl bg-background flex flex-col gap-0 max-h-[88vh] max-w-4xl shadow-2xl overflow-hidden">
       <!-- Modal Header -->
-      <div class="px-5 py-3.5 border-b flex items-center justify-between shrink-0 bg-muted/20">
-        <div class="flex items-center gap-2.5">
-          <div class="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+      <div class="px-5 py-3.5 border-b bg-muted/20 flex shrink-0 items-center justify-between">
+        <div class="flex gap-2.5 items-center">
+          <div class="text-primary rounded-lg bg-primary/10 flex shrink-0 h-8 w-8 items-center justify-center">
             <Sparkles class="h-4 w-4" />
           </div>
           <div>
-            <DialogTitle class="text-sm font-semibold text-foreground flex items-center gap-2">
+            <DialogTitle class="text-sm text-foreground font-semibold flex gap-2 items-center">
               <span>Mock Data Generator</span>
-              <span class="text-xs font-mono font-normal px-2 py-0.5 rounded bg-muted text-muted-foreground border">
+              <span class="text-xs text-muted-foreground font-mono font-normal px-2 py-0.5 border rounded bg-muted">
                 {{ schema ? `${schema}.${tableName}` : tableName }}
               </span>
             </DialogTitle>
@@ -352,13 +354,13 @@ async function insertDirectly() {
         </div>
 
         <!-- Row Count Presets -->
-        <div class="flex items-center gap-1.5 mr-6">
+        <div class="mr-6 flex gap-1.5 items-center">
           <span class="text-xs text-muted-foreground mr-1">Rows:</span>
           <button
             v-for="preset in [10, 25, 50, 100, 250]"
             :key="preset"
             type="button"
-            class="px-2 py-1 text-xs rounded font-medium transition-colors"
+            class="text-xs font-medium px-2 py-1 rounded transition-colors"
             :class="rowCount === preset ? 'bg-primary text-primary-foreground' : 'bg-muted/70 text-muted-foreground hover:text-foreground'"
             @click="rowCount = preset"
           >
@@ -368,10 +370,10 @@ async function insertDirectly() {
       </div>
 
       <!-- Navigation tabs -->
-      <div class="px-5 pt-2 pb-0 border-b flex gap-4 text-xs font-medium shrink-0 bg-card/30">
+      <div class="text-xs font-medium px-5 pb-0 pt-2 border-b bg-card/30 flex shrink-0 gap-4">
         <button
           type="button"
-          class="pb-2.5 flex items-center gap-1.5 border-b-2 transition-colors"
+          class="pb-2.5 border-b-2 flex gap-1.5 transition-colors items-center"
           :class="activeTab === 'columns' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'"
           @click="activeTab = 'columns'"
         >
@@ -380,7 +382,7 @@ async function insertDirectly() {
         </button>
         <button
           type="button"
-          class="pb-2.5 flex items-center gap-1.5 border-b-2 transition-colors"
+          class="pb-2.5 border-b-2 flex gap-1.5 transition-colors items-center"
           :class="activeTab === 'preview_table' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'"
           @click="activeTab = 'preview_table'"
         >
@@ -389,7 +391,7 @@ async function insertDirectly() {
         </button>
         <button
           type="button"
-          class="pb-2.5 flex items-center gap-1.5 border-b-2 transition-colors"
+          class="pb-2.5 border-b-2 flex gap-1.5 transition-colors items-center"
           :class="activeTab === 'preview_sql' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'"
           @click="activeTab = 'preview_sql'"
         >
@@ -399,16 +401,18 @@ async function insertDirectly() {
       </div>
 
       <!-- Body Content -->
-      <div class="flex-1 overflow-y-auto p-5 min-h-[320px] max-h-[500px]">
+      <div class="p-5 flex-1 max-h-[500px] min-h-[320px] overflow-y-auto">
         <!-- Loading State -->
-        <div v-if="loading" class="h-64 flex flex-col items-center justify-center text-muted-foreground gap-2">
+        <div v-if="loading" class="text-muted-foreground flex flex-col gap-2 h-64 items-center justify-center">
           <Spinner size="md" />
-          <p class="text-xs">Inspecting columns and inferring generator types...</p>
+          <p class="text-xs">
+            Inspecting columns and inferring generator types...
+          </p>
         </div>
 
         <!-- 1. Column Config Tab -->
         <div v-else-if="activeTab === 'columns'" class="space-y-3">
-          <div class="flex items-center justify-between text-xs text-muted-foreground px-1">
+          <div class="text-xs text-muted-foreground px-1 flex items-center justify-between">
             <span>Configure which columns to include and choose the synthetic pattern.</span>
             <div class="flex gap-2">
               <button
@@ -429,55 +433,63 @@ async function insertDirectly() {
             </div>
           </div>
 
-          <div class="border rounded-lg overflow-hidden bg-card/40">
-            <table class="w-full text-xs text-left">
-              <thead class="bg-muted/40 border-b font-medium text-muted-foreground">
+          <div class="border rounded-lg bg-card/40 overflow-hidden">
+            <table class="text-xs text-left w-full">
+              <thead class="text-muted-foreground font-medium border-b bg-muted/40">
                 <tr>
-                  <th class="py-2 px-3 w-10 text-center">Inc</th>
-                  <th class="py-2 px-3">Column Name</th>
-                  <th class="py-2 px-3 w-32">Type</th>
-                  <th class="py-2 px-3">Mock Data Generator</th>
+                  <th class="px-3 py-2 text-center w-10">
+                    Inc
+                  </th>
+                  <th class="px-3 py-2">
+                    Column Name
+                  </th>
+                  <th class="px-3 py-2 w-32">
+                    Type
+                  </th>
+                  <th class="px-3 py-2">
+                    Mock Data Generator
+                  </th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border/60">
+              <tbody class="divide-border/60 divide-y">
                 <tr
                   v-for="col in columns"
                   :key="col.name"
-                  class="hover:bg-muted/20 transition-colors"
+                  class="transition-colors hover:bg-muted/20"
                   :class="{ 'opacity-50 bg-muted/10': !col.included }"
                 >
-                  <td class="py-2 px-3 text-center">
+                  <td class="px-3 py-2 text-center">
                     <input
                       v-model="col.included"
                       type="checkbox"
-                      class="rounded border-border text-primary focus:ring-0 cursor-pointer"
+                      class="text-primary border-border rounded cursor-pointer focus:ring-0"
                     >
                   </td>
-                  <td class="py-2 px-3">
-                    <div class="font-medium font-mono text-foreground flex items-center gap-1.5">
+                  <td class="px-3 py-2">
+                    <div class="text-foreground font-medium font-mono flex gap-1.5 items-center">
                       <span>{{ col.name }}</span>
                       <span
                         v-if="col.isPrimaryKey"
-                        class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-sans font-semibold"
+                        class="text-[10px] text-amber-600 font-sans font-semibold px-1.5 py-0.2 rounded bg-amber-500/15 dark:text-amber-400"
                       >
                         PK
                       </span>
                       <span
                         v-if="col.isAutoIncrement"
-                        class="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400 font-sans"
+                        class="text-[10px] text-blue-600 font-sans px-1.5 py-0.2 rounded bg-blue-500/15 dark:text-blue-400"
                       >
                         AUTO
                       </span>
                     </div>
                   </td>
-                  <td class="py-2 px-3 text-muted-foreground font-mono">
+                  <td class="text-muted-foreground font-mono px-3 py-2">
                     {{ col.dataType }}
                   </td>
-                  <td class="py-2 px-3">
+                  <td class="px-3 py-2">
                     <select
                       v-model="col.generator"
                       :disabled="!col.included"
-                      class="h-7 w-full max-w-[220px] rounded border border-border/80 bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer disabled:cursor-not-allowed"
+                      class="text-xs text-foreground px-2 border border-border/80 rounded bg-background h-7 max-w-[220px] w-full cursor-pointer focus:outline-none disabled:cursor-not-allowed focus:ring-1 focus:ring-primary"
                     >
                       <option
                         v-for="opt in generatorOptions"
@@ -500,31 +512,35 @@ async function insertDirectly() {
             Preview of first 5 synthetic records that will be generated:
           </p>
 
-          <div class="border rounded-lg overflow-x-auto bg-card/40">
-            <table class="w-full text-xs text-left">
-              <thead class="bg-muted/40 border-b font-medium text-muted-foreground">
+          <div class="border rounded-lg bg-card/40 overflow-x-auto">
+            <table class="text-xs text-left w-full">
+              <thead class="text-muted-foreground font-medium border-b bg-muted/40">
                 <tr>
-                  <th class="py-2 px-3 w-8">#</th>
+                  <th class="px-3 py-2 w-8">
+                    #
+                  </th>
                   <th
                     v-for="col in activeColumns"
                     :key="col.name"
-                    class="py-2 px-3 font-mono font-medium"
+                    class="font-medium font-mono px-3 py-2"
                   >
                     {{ col.name }}
                   </th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-border/60">
+              <tbody class="divide-border/60 divide-y">
                 <tr
                   v-for="(row, idx) in generatedRows.slice(0, 5)"
                   :key="idx"
-                  class="hover:bg-muted/20 font-mono text-[11px]"
+                  class="text-[11px] font-mono hover:bg-muted/20"
                 >
-                  <td class="py-2 px-3 text-muted-foreground">{{ idx + 1 }}</td>
+                  <td class="text-muted-foreground px-3 py-2">
+                    {{ idx + 1 }}
+                  </td>
                   <td
                     v-for="col in activeColumns"
                     :key="col.name"
-                    class="py-2 px-3 truncate max-w-[200px]"
+                    class="px-3 py-2 max-w-[200px] truncate"
                     :class="row[col.name] === null ? 'text-muted-foreground/60 italic' : 'text-foreground'"
                   >
                     {{ row[col.name] === null ? 'NULL' : String(row[col.name]) }}
@@ -537,29 +553,29 @@ async function insertDirectly() {
 
         <!-- 3. Preview SQL Tab -->
         <div v-else class="space-y-2">
-          <div class="flex items-center justify-between text-xs text-muted-foreground">
+          <div class="text-xs text-muted-foreground flex items-center justify-between">
             <span>Formatted SQL Batch Query ({{ generatedRows.length }} rows):</span>
             <button
               type="button"
-              class="inline-flex items-center gap-1 hover:text-foreground text-xs"
+              class="text-xs inline-flex gap-1 items-center hover:text-foreground"
               @click="copySql"
             >
-              <Check v-if="copied" class="h-3 w-3 text-emerald-500" />
+              <Check v-if="copied" class="text-emerald-500 h-3 w-3" />
               <Copy v-else class="h-3 w-3" />
               <span>{{ copied ? 'Copied' : 'Copy SQL' }}</span>
             </button>
           </div>
-          <pre class="bg-background text-foreground font-mono text-xs p-3.5 rounded-lg border overflow-x-auto max-h-[380px] select-all leading-relaxed">{{ generatedSql }}</pre>
+          <pre class="text-xs text-foreground leading-relaxed font-mono p-3.5 border rounded-lg bg-background max-h-[380px] select-all overflow-x-auto">{{ generatedSql }}</pre>
         </div>
       </div>
 
       <!-- Modal Footer -->
-      <div class="px-5 py-3 border-t bg-muted/20 flex items-center justify-between shrink-0">
+      <div class="px-5 py-3 border-t bg-muted/20 flex shrink-0 items-center justify-between">
         <span class="text-xs text-muted-foreground">
           Ready to seed <strong class="text-foreground">{{ rowCount }}</strong> records into <code class="text-xs font-mono">{{ tableName }}</code>
         </span>
 
-        <div class="flex items-center gap-2">
+        <div class="flex gap-2 items-center">
           <Button
             variant="outline"
             size="sm"
@@ -578,7 +594,7 @@ async function insertDirectly() {
           </Button>
           <Button
             size="sm"
-            class="gap-1.5 bg-primary text-primary-foreground hover:opacity-90"
+            class="text-primary-foreground bg-primary gap-1.5 hover:opacity-90"
             :disabled="executing || loading || activeColumns.length === 0"
             @click="insertDirectly"
           >

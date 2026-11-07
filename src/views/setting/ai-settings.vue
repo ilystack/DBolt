@@ -130,15 +130,17 @@ function handleCloseDialog() {
       <!-- Zero Data Leak Privacy Architecture -->
       <section v-if="settingsLoaded" class="space-y-3">
         <div class="p-4 border rounded-xl bg-card/60 space-y-3">
-          <div class="flex items-center justify-between gap-4">
-            <div class="flex items-center gap-2.5">
-              <div class="h-9 w-9 rounded-lg bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0">
+          <div class="flex gap-4 items-center justify-between">
+            <div class="flex gap-2.5 items-center">
+              <div class="text-emerald-500 rounded-lg bg-emerald-500/15 flex shrink-0 h-9 w-9 items-center justify-center">
                 <ShieldCheck class="h-5 w-5" />
               </div>
               <div>
-                <div class="flex items-center gap-2">
-                  <h3 class="font-semibold text-sm text-foreground">Zero Data Leak Architecture</h3>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                <div class="flex gap-2 items-center">
+                  <h3 class="text-sm text-foreground font-semibold">
+                    Zero Data Leak Architecture
+                  </h3>
+                  <span class="text-[10px] text-emerald-600 tracking-wider font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 uppercase dark:text-emerald-400">
                     Always Active
                   </span>
                 </div>
@@ -149,10 +151,10 @@ function handleCloseDialog() {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+          <div class="pt-1 gap-3 grid grid-cols-1 md:grid-cols-3">
             <div class="p-3 border rounded-lg bg-muted/20 space-y-1">
-              <div class="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                <EyeOff class="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <div class="text-xs text-foreground font-medium flex gap-1.5 items-center">
+                <EyeOff class="text-emerald-500 shrink-0 h-3.5 w-3.5" />
                 <span>Schema-Only Context</span>
               </div>
               <p class="text-[11px] text-muted-foreground leading-normal">
@@ -161,8 +163,8 @@ function handleCloseDialog() {
             </div>
 
             <div class="p-3 border rounded-lg bg-muted/20 space-y-1">
-              <div class="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                <Server class="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <div class="text-xs text-foreground font-medium flex gap-1.5 items-center">
+                <Server class="text-emerald-500 shrink-0 h-3.5 w-3.5" />
                 <span>Air-Gapped Local Ollama</span>
               </div>
               <p class="text-[11px] text-muted-foreground leading-normal">
@@ -171,8 +173,8 @@ function handleCloseDialog() {
             </div>
 
             <div class="p-3 border rounded-lg bg-muted/20 space-y-1">
-              <div class="flex items-center gap-1.5 text-xs font-medium text-foreground">
-                <Lock class="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <div class="text-xs text-foreground font-medium flex gap-1.5 items-center">
+                <Lock class="text-emerald-500 shrink-0 h-3.5 w-3.5" />
                 <span>Direct Client-to-API</span>
               </div>
               <p class="text-[11px] text-muted-foreground leading-normal">

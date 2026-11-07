@@ -18,7 +18,7 @@ describe('extractStatementAtCursor', () => {
     const lines = statement.split('\n')
     expect(extractStatementAtCursor(sql, {
       lineNumber: lines.length,
-      column: lines[lines.length - 1].length,
+      column: lines.at(-1).length,
     })).toBe(statement)
   })
 

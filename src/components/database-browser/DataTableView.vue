@@ -1046,11 +1046,11 @@ watch(
         <Button
           variant="outline"
           size="sm"
-          class="text-xs flex-shrink-0 h-7 gap-1"
-          :title="'Generate & Seed Mock Data'"
+          class="text-xs flex-shrink-0 gap-1 h-7"
+          title="Generate & Seed Mock Data"
           @click.stop="mockDataModalOpen = true"
         >
-          <span class="i-carbon-magic-wand h-3.5 w-3.5 text-primary" />
+          <span class="i-carbon-magic-wand text-primary h-3.5 w-3.5" />
           <span>Mock Data</span>
         </Button>
 

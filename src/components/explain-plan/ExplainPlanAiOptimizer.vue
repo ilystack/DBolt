@@ -30,7 +30,7 @@ type OptimizationIssue = {
 function extractColumnFromFilter(detail: string): string[] {
   const cols: string[] = []
   // Matches patterns like `(status = 'active')`, `(user_id = 123)`, `status = ...`
-  const matches = detail.matchAll(/(?:(?:\w+\.)?(\b[a-zA-Z_][a-zA-Z0-9_]*\b))\s*(?:=|<|>|LIKE|IN|IS)/gi)
+  const matches = detail.matchAll(/(?:\w+\.)?(\b[a-z_]\w*\b)\s*(?:[=<>]|LIKE|IN|IS)/gi)
   for (const m of matches) {
     const col = m[1].toLowerCase()
     if (!['and', 'or', 'not', 'true', 'false', 'null', 'filter'].includes(col) && !cols.includes(col)) {
@@ -55,7 +55,7 @@ const analysis = computed<{
 
   function inspectNode(node: ExplainPlanNode) {
     const typeLower = node.nodeType.toLowerCase()
-    const isSeqScan = typeLower.includes('seq scan') || typeLower.includes('full table scan') || typeLower.includes('scan') && !node.index
+    const isSeqScan = typeLower.includes('seq scan') || typeLower.includes('full table scan') || (typeLower.includes('scan') && !node.index)
     const isSort = typeLower.includes('sort') || typeLower.includes('filesort')
     const isNestedLoop = typeLower.includes('nested loop')
 
@@ -175,19 +175,19 @@ Please recommend the best index and provide an optimized rewritten SQL query.`
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto p-4 space-y-4">
+  <div class="p-4 h-full overflow-y-auto space-y-4">
     <!-- Health Score Header Banner -->
     <div
-      class="p-4 border rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      class="p-4 border rounded-xl flex flex-col gap-4 justify-between sm:flex-row sm:items-center"
       :class="{
         'border-emerald-500/30 bg-emerald-500/5': analysis.status === 'optimal',
         'border-amber-500/30 bg-amber-500/5': analysis.status === 'moderate',
         'border-rose-500/30 bg-rose-500/5': analysis.status === 'slow',
       }"
     >
-      <div class="flex items-center gap-3">
+      <div class="flex gap-3 items-center">
         <div
-          class="h-10 w-10 rounded-lg flex items-center justify-center shrink-0"
+          class="rounded-lg flex shrink-0 h-10 w-10 items-center justify-center"
           :class="{
             'bg-emerald-500/15 text-emerald-500': analysis.status === 'optimal',
             'bg-amber-500/15 text-amber-500': analysis.status === 'moderate',
@@ -199,12 +199,12 @@ Please recommend the best index and provide an optimized rewritten SQL query.`
           <Flame v-else class="h-5 w-5" />
         </div>
         <div>
-          <div class="flex items-center gap-2">
-            <h3 class="font-semibold text-sm text-foreground">
+          <div class="flex gap-2 items-center">
+            <h3 class="text-sm text-foreground font-semibold">
               Query Performance Score: {{ analysis.score }}/100
             </h3>
             <span
-              class="text-[11px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wider"
+              class="text-[11px] tracking-wider font-medium px-2 py-0.5 rounded-full uppercase"
               :class="{
                 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400': analysis.status === 'optimal',
                 'bg-amber-500/20 text-amber-600 dark:text-amber-400': analysis.status === 'moderate',
@@ -225,7 +225,7 @@ Please recommend the best index and provide an optimized rewritten SQL query.`
 
       <button
         v-if="analysis.issues.length > 0"
-        class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity shrink-0"
+        class="text-xs text-primary-foreground font-medium px-3 py-1.5 rounded-md bg-primary inline-flex shrink-0 gap-1.5 transition-opacity items-center hover:opacity-90"
         @click="handleAskAi(analysis.issues[0])"
       >
         <Sparkles class="h-3.5 w-3.5" />
@@ -235,31 +235,31 @@ Please recommend the best index and provide an optimized rewritten SQL query.`
 
     <!-- Optimization Opportunities List -->
     <div v-if="analysis.issues.length > 0" class="space-y-3">
-      <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <h4 class="text-xs text-muted-foreground tracking-wider font-semibold uppercase">
         Identified Bottlenecks & Recommendations
       </h4>
 
       <div
         v-for="issue in analysis.issues"
         :key="issue.id"
-        class="border rounded-lg p-3.5 bg-card/50 space-y-2.5 transition-colors hover:border-foreground/20"
+        class="p-3.5 border rounded-lg bg-card/50 transition-colors space-y-2.5 hover:border-foreground/20"
       >
-        <div class="flex items-start justify-between gap-3">
+        <div class="flex gap-3 items-start justify-between">
           <div class="space-y-1">
-            <div class="flex items-center gap-2">
+            <div class="flex gap-2 items-center">
               <span
-                class="h-2 w-2 rounded-full shrink-0"
+                class="rounded-full shrink-0 h-2 w-2"
                 :class="issue.severity === 'high' ? 'bg-rose-500' : issue.severity === 'medium' ? 'bg-amber-500' : 'bg-blue-500'"
               />
-              <span class="text-sm font-medium text-foreground">{{ issue.title }}</span>
+              <span class="text-sm text-foreground font-medium">{{ issue.title }}</span>
             </div>
             <p class="text-xs text-muted-foreground pl-4">
               {{ issue.description }}
             </p>
           </div>
           <button
-            class="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 shrink-0 p-1 rounded hover:bg-muted/50"
-            :title="'Consult AI on this issue'"
+            class="text-xs text-muted-foreground p-1 rounded inline-flex shrink-0 gap-1 items-center hover:text-foreground hover:bg-muted/50"
+            title="Consult AI on this issue"
             @click="handleAskAi(issue)"
           >
             <Sparkles class="h-3.5 w-3.5" />
@@ -267,26 +267,26 @@ Please recommend the best index and provide an optimized rewritten SQL query.`
           </button>
         </div>
 
-        <div class="bg-muted/40 rounded-md p-2.5 pl-3 border border-border/60 text-xs space-y-1.5">
-          <p class="text-foreground/90 font-medium flex items-center gap-1.5">
-            <Lightbulb class="h-3.5 w-3.5 text-amber-500 shrink-0" />
+        <div class="text-xs p-2.5 pl-3 border border-border/60 rounded-md bg-muted/40 space-y-1.5">
+          <p class="text-foreground/90 font-medium flex gap-1.5 items-center">
+            <Lightbulb class="text-amber-500 shrink-0 h-3.5 w-3.5" />
             <span>{{ issue.recommendation }}</span>
           </p>
 
           <div v-if="issue.suggestedSql" class="pt-1.5">
-            <div class="flex items-center justify-between text-muted-foreground text-[11px] mb-1">
+            <div class="text-[11px] text-muted-foreground mb-1 flex items-center justify-between">
               <span>Suggested Index DDL:</span>
               <div class="flex gap-2">
                 <button
-                  class="hover:text-foreground inline-flex items-center gap-1"
+                  class="inline-flex gap-1 items-center hover:text-foreground"
                   @click="copySql(issue.suggestedSql)"
                 >
-                  <Check v-if="copiedIndex === issue.suggestedSql" class="h-3 w-3 text-emerald-500" />
+                  <Check v-if="copiedIndex === issue.suggestedSql" class="text-emerald-500 h-3 w-3" />
                   <Copy v-else class="h-3 w-3" />
                   <span>{{ copiedIndex === issue.suggestedSql ? 'Copied' : 'Copy' }}</span>
                 </button>
                 <button
-                  class="hover:text-foreground inline-flex items-center gap-1 text-primary"
+                  class="text-primary inline-flex gap-1 items-center hover:text-foreground"
                   @click="emit('applySql', issue.suggestedSql)"
                 >
                   <Play class="h-3 w-3" />
@@ -294,19 +294,21 @@ Please recommend the best index and provide an optimized rewritten SQL query.`
                 </button>
               </div>
             </div>
-            <pre class="bg-background/90 text-foreground font-mono text-[11px] p-2 rounded border border-border/70 overflow-x-auto select-all">{{ issue.suggestedSql }}</pre>
+            <pre class="text-[11px] text-foreground font-mono p-2 border border-border/70 rounded bg-background/90 select-all overflow-x-auto">{{ issue.suggestedSql }}</pre>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Optimal State / General Advice -->
-    <div v-else class="border rounded-xl p-8 text-center space-y-3 bg-muted/20">
-      <div class="h-12 w-12 rounded-full bg-emerald-500/10 text-emerald-500 mx-auto flex items-center justify-center">
+    <div v-else class="p-8 text-center border rounded-xl bg-muted/20 space-y-3">
+      <div class="text-emerald-500 mx-auto rounded-full bg-emerald-500/10 flex h-12 w-12 items-center justify-center">
         <Zap class="h-6 w-6" />
       </div>
-      <div class="max-w-md mx-auto space-y-1">
-        <h4 class="font-medium text-sm text-foreground">Query Execution is Fast & Optimized</h4>
+      <div class="mx-auto max-w-md space-y-1">
+        <h4 class="text-sm text-foreground font-medium">
+          Query Execution is Fast & Optimized
+        </h4>
         <p class="text-xs text-muted-foreground">
           No unindexed sequential scans or costly Cartesian joins found in this plan. Indexes are being leveraged effectively.
         </p>
@@ -314,4 +316,3 @@ Please recommend the best index and provide an optimized rewritten SQL query.`
     </div>
   </div>
 </template>
-

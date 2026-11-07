@@ -29,7 +29,7 @@ export const extractStatementAtCursor = (sql: string, cursorPosition?: CursorPos
     }
 
     const firstLine = selectedLines[0].substring(selection.startColumn - 1)
-    const lastLine = selectedLines[selectedLines.length - 1].substring(
+    const lastLine = selectedLines.at(-1).substring(
       0,
       selection.endColumn - 1,
     )

@@ -149,7 +149,7 @@ const mountPanel = (modelValue?: Record<string, unknown>) =>
 
 const lastPayload = (wrapper: ReturnType<typeof mountPanel>) => {
   const emitted = wrapper.emitted('update:modelValue') ?? []
-  return emitted[emitted.length - 1]?.[0] as {
+  return emitted.at(-1)?.[0] as {
     enabled?: boolean
     profileIds?: string[]
     useSystemProxy?: boolean
@@ -350,14 +350,14 @@ describe('sshTunnelConfigPanel — configure-as-intent', () => {
     const wrapper = mountPanel({ enabled: true, profileIds: ['p1', 'p2'] })
     await flushPromises()
     const create = Sortable.create as jest.Mock
-    const options = create.mock.calls[create.mock.calls.length - 1]![1]
+    const options = create.mock.calls.at(-1)![1]
     const rows = wrapper.findAll('.ssh-hop-handle').map(el => el.element.parentElement!)
     rows[0]!.parentElement!.appendChild(rows[0]!)
     options.onEnd({ item: rows[0], oldIndex: 0, newIndex: 1 })
     await syncProps(wrapper)
     expect(lastPayload(wrapper).profileIds).toEqual(['p2', 'p1'])
     expect(wrapper.findAll('.ssh-hop-handle')[0]!.element.parentElement?.textContent).toContain('Bastion B')
-    const instance = create.mock.results[create.mock.results.length - 1]!.value
+    const instance = create.mock.results.at(-1)!.value
     await wrapper.setProps({ modelValue: { enabled: false, profileIds: [] } as never })
     expect(instance.destroy).toHaveBeenCalled()
     const previous = create.mock.calls.length

@@ -37,5 +37,7 @@ export default antfu({
     'unused-imports/no-unused-vars': 'warn',
     'style/eol-last': ['error', 'always'],
     'ts/consistent-type-definitions': ['error', 'type'],
+    'e18e/prefer-static-regex': 'off',
+    'node/prefer-global/process': 'off',
   },
 })

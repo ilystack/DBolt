@@ -52,7 +52,7 @@ const formatLabel = computed(() => {
 const fileSummary = computed(() => {
   if (filePath.value) {
     const parts = filePath.value.split(/[\\/]/)
-    return parts[parts.length - 1]
+    return parts.at(-1)
   }
   return ''
 })

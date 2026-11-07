@@ -2,8 +2,8 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ExternalLink, MessageSquareHeart, Sparkles } from 'lucide-vue-next'
 import { ref } from 'vue'
-import { version } from '../../../package.json'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { version } from '../../../package.json'
 
 const open = ref(false)
 const GITHUB_REPO = 'https://github.com/ilystack/DBolt'
@@ -27,9 +27,9 @@ const GITHUB_REPO = 'https://github.com/ilystack/DBolt'
         </span>
       </button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent side="right" align="start" class="w-56 p-1.5">
+    <DropdownMenuContent side="right" align="start" class="p-1.5 w-56">
       <div class="px-2 py-1.5 flex items-center justify-between">
-        <span class="text-sm font-semibold text-foreground">
+        <span class="text-sm text-foreground font-semibold">
           DBolt
         </span>
         <span class="text-xs text-muted-foreground font-mono">

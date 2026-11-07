@@ -100,11 +100,11 @@ const formattedTotalCost = computed(() => {
         {{ t('pages.queries.explain.rawView') }}
       </button>
       <button
-        class="text-xs font-medium px-2 py-0.5 rounded transition-colors inline-flex items-center gap-1.5"
+        class="text-xs font-medium px-2 py-0.5 rounded inline-flex gap-1.5 transition-colors items-center"
         :class="activeView === 'optimizer' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'"
         @click="activeView = 'optimizer'"
       >
-        <Sparkles class="h-3 w-3 text-amber-500" />
+        <Sparkles class="text-amber-500 h-3 w-3" />
         {{ t('pages.queries.explain.optimizerView') }}
       </button>
     </div>

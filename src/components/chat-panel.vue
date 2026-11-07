@@ -146,7 +146,7 @@ watch(
     const msgs = props.messages
     if (msgs.length === 0)
       return ''
-    const last = msgs[msgs.length - 1]
+    const last = msgs.at(-1)
     return `${last.content?.length ?? 0}:${(last as any).thinking?.length ?? 0}:${(last as any).toolCalls?.length ?? 0}`
   },
   () => scrollToBottomBatched(),
@@ -265,9 +265,11 @@ onBeforeUnmount(() => {
     <div class="flex-1 min-h-0 w-full">
       <ScrollArea ref="scrollAreaRef" class="h-full w-full">
         <!-- Empty state -->
-        <div v-if="messages.length === 0 && !isLoading" class="px-4 text-center flex flex-col h-full w-full items-center justify-center select-none">
-          <Bot class="h-16 w-16 text-muted-foreground/80 mb-3 stroke-[1.5]" />
-          <h2 class="text-xl font-medium text-foreground tracking-tight mb-1">What I can do for you?</h2>
+        <div v-if="messages.length === 0 && !isLoading" class="px-4 text-center flex flex-col h-full w-full select-none items-center justify-center">
+          <Bot class="text-muted-foreground/80 mb-3 h-16 w-16 stroke-[1.5]" />
+          <h2 class="text-xl text-foreground tracking-tight font-medium mb-1">
+            What I can do for you?
+          </h2>
           <p class="text-xs text-muted-foreground max-w-sm">
             <slot name="empty">
               {{ emptyHint || t('dataStudio.agent.emptyState') }}
@@ -406,7 +408,7 @@ onBeforeUnmount(() => {
           <div class="toolbar-right">
             <!-- Zero Data Leak Privacy Guard Badge -->
             <div
-              class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md select-none cursor-help"
+              class="text-[11px] text-emerald-600 font-medium px-2 py-0.5 border border-emerald-500/20 rounded-md bg-emerald-500/10 gap-1 hidden cursor-help select-none items-center dark:text-emerald-400 sm:inline-flex"
               title="Zero Data Leak Guard: DBolt only provides schema metadata. Production table row values are never transmitted to AI models."
             >
               <ShieldCheck class="h-3 w-3" />

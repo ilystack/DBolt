@@ -225,14 +225,14 @@ export const useTabStore = defineStore('tabs', {
     closeTabsForConnection(connectionId: string) {
       const remaining = this.tabs.filter(t => t.connectionId !== connectionId)
       this.tabs = remaining
-      if (this.activeTabId && !remaining.find(t => t.id === this.activeTabId)) {
+      if (this.activeTabId && !remaining.some(t => t.id === this.activeTabId)) {
         this.activeTabId = remaining[0]?.id ?? null
       }
     },
 
     closeNonOrphanTabs() {
       this.tabs = this.tabs.filter(t => t.orphanFromConnectionId)
-      if (this.activeTabId && !this.tabs.find(t => t.id === this.activeTabId)) {
+      if (this.activeTabId && !this.tabs.some(t => t.id === this.activeTabId)) {
         const orphanTab = this.tabs.find(t => t.orphanFromConnectionId)
         this.activeTabId = orphanTab?.id ?? null
       }
@@ -267,7 +267,7 @@ export const useTabStore = defineStore('tabs', {
             : t,
         )
 
-      if (this.activeTabId && !this.tabs.find(t => t.id === this.activeTabId)) {
+      if (this.activeTabId && !this.tabs.some(t => t.id === this.activeTabId)) {
         const nonOrphanTab = this.tabs.find(t => !t.orphanFromConnectionId)
         const orphanTab = this.tabs.find(t => t.orphanFromConnectionId)
         this.activeTabId = nonOrphanTab?.id ?? orphanTab?.id ?? null
@@ -303,7 +303,7 @@ export const useTabStore = defineStore('tabs', {
         }
       })
 
-      if (this.activeTabId && !this.tabs.find(t => t.id === this.activeTabId)) {
+      if (this.activeTabId && !this.tabs.some(t => t.id === this.activeTabId)) {
         const nonOrphanTab = this.tabs.find(t => !t.orphanFromConnectionId)
         const orphanTab = this.tabs.find(t => t.orphanFromConnectionId)
         this.activeTabId = nonOrphanTab?.id ?? orphanTab?.id ?? null
@@ -482,7 +482,7 @@ export const useTabStore = defineStore('tabs', {
     },
 
     setActiveTab(tabId: string) {
-      if (this.tabs.find(t => t.id === tabId)) {
+      if (this.tabs.some(t => t.id === tabId)) {
         this.activeTabId = tabId
       }
     },

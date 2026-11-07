@@ -29,51 +29,51 @@ const tabConfig = computed(() => [
 <template>
   <AppLayout>
     <div class="bg-background flex flex-col h-full">
-        <!-- Header -->
-        <header class="px-6 py-3 border-b border-border/40 flex shrink-0 items-center justify-between">
-          <div class="flex gap-3 items-center">
-            <h1 class="text-xl tracking-tight font-semibold">
-              {{ t('transfer.title') }}
-            </h1>
-            <p class="text-caption text-muted-foreground">
-              {{ t('transfer.subtitle') }}
-            </p>
+      <!-- Header -->
+      <header class="px-6 py-3 border-b border-border/40 flex shrink-0 items-center justify-between">
+        <div class="flex gap-3 items-center">
+          <h1 class="text-xl tracking-tight font-semibold">
+            {{ t('transfer.title') }}
+          </h1>
+          <p class="text-caption text-muted-foreground">
+            {{ t('transfer.subtitle') }}
+          </p>
+        </div>
+        <TaskManagerButton @click="showTaskManager = true" />
+      </header>
+
+      <!-- Content Layout -->
+      <div class="px-3 py-2.5 flex flex-1 min-h-0">
+        <!-- Left: Steps Column -->
+        <div class="flex flex-1 flex-col gap-2.5 min-h-0 min-w-0">
+          <!-- Segmented Control for Mode Switch -->
+          <div class="flex shrink-0 justify-start">
+            <Tabs v-model="activeTab" class="w-auto">
+              <TabsList class="p-1 border border-border/40 rounded-lg bg-muted/50 gap-1 h-9">
+                <TabsTrigger
+                  v-for="tab in tabConfig"
+                  :key="tab.value"
+                  :value="tab.value"
+                  class="text-xs font-medium px-4 rounded-md flex gap-2 h-full transition-colors items-center justify-center data-[state=active]:text-primary-text data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
+                  <span :class="tab.icon" class="h-3.5 w-3.5" />
+                  <span class="truncate">{{ tab.label }}</span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
-          <TaskManagerButton @click="showTaskManager = true" />
-        </header>
 
-        <!-- Content Layout -->
-        <div class="px-3 py-2.5 flex flex-1 min-h-0">
-          <!-- Left: Steps Column -->
-          <div class="flex flex-1 flex-col gap-2.5 min-h-0 min-w-0">
-            <!-- Segmented Control for Mode Switch -->
-            <div class="flex shrink-0 justify-start">
-              <Tabs v-model="activeTab" class="w-auto">
-                <TabsList class="p-1 border border-border/40 rounded-lg bg-muted/50 gap-1 h-9">
-                  <TabsTrigger
-                    v-for="tab in tabConfig"
-                    :key="tab.value"
-                    :value="tab.value"
-                    class="text-xs font-medium px-4 rounded-md flex gap-2 h-full transition-colors items-center justify-center data-[state=active]:text-primary-text data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                  >
-                    <span :class="tab.icon" class="h-3.5 w-3.5" />
-                    <span class="truncate">{{ tab.label }}</span>
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-
-            <!-- Steps Content (scrollable) -->
-            <div class="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border pr-2 flex flex-1 flex-col gap-3 overflow-y-auto">
-              <ExportWizard v-if="activeTab === 'export'" />
-              <ImportWizard v-else-if="activeTab === 'import'" />
-            </div>
+          <!-- Steps Content (scrollable) -->
+          <div class="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border pr-2 flex flex-1 flex-col gap-3 overflow-y-auto">
+            <ExportWizard v-if="activeTab === 'export'" />
+            <ImportWizard v-else-if="activeTab === 'import'" />
           </div>
         </div>
-
-        <!-- Task Manager Panel -->
-        <TaskManagerPanel v-model:open="showTaskManager" />
       </div>
+
+      <!-- Task Manager Panel -->
+      <TaskManagerPanel v-model:open="showTaskManager" />
+    </div>
   </AppLayout>
 </template>
 

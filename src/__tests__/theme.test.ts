@@ -5,7 +5,7 @@ import { applyEditorTheme } from '@/composables/editorTheme'
 
 const css = readFileSync(join(__dirname, '../assets/index.css'), 'utf8')
 const parseTokens = (block: string) => Object.fromEntries(
-  [...block.matchAll(/--([\w-]+): ([^;]+);/g)].map(([, name, value]) => [name, value]),
+  Array.from(block.matchAll(/--([\w-]+): ([^;]+);/g), ([, name, value]) => [name, value]),
 )
 const themes = {
   light: parseTokens(css.slice(css.indexOf('{') + 1, css.indexOf('}'))),

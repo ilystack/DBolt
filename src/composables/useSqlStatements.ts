@@ -77,7 +77,7 @@ function scanStatements(content: string): StatementRange[] {
       if (content.startsWith(tag, i)) {
         state.dollarTag = null
         i += tag.length - 1
-        state.prevChar = tag[tag.length - 1]
+        state.prevChar = tag.at(-1)
         continue
       }
       state.prevChar = ch
