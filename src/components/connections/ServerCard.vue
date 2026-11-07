@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useDatabaseIcon } from '@/composables/useDatabaseIcon'
-import { ConnectionStatus, DatabaseType, formatServerVersion, getConnectionStrategy, useEntitlementStore } from '@/store'
+import { ConnectionStatus, DatabaseType, formatServerVersion, getConnectionStrategy } from '@/store'
 
 const props = defineProps<{
   connection: ServerConnection
@@ -31,7 +31,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const entitlementStore = useEntitlementStore()
 const { getDatabaseIcon, getDatabaseColor } = useDatabaseIcon()
 
 const statusColor = computed(() => {

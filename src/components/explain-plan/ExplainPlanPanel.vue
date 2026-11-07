@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { ExplainPlanNode, ExplainResult } from '@/types/explainPlan'
+import { Sparkles } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Spinner } from '@/components/ui/spinner'
+import ExplainPlanAiOptimizer from './ExplainPlanAiOptimizer.vue'
 import ExplainPlanNodeTree from './ExplainPlanNodeTree.vue'
 import ExplainPlanRawView from './ExplainPlanRawView.vue'
 import ExplainPlanSummaryTable from './ExplainPlanSummaryTable.vue'
@@ -13,8 +15,13 @@ const props = defineProps<{
   error: string | null
 }>()
 
+const emit = defineEmits<{
+  applySql: [sql: string]
+  askAi: [prompt: string]
+}>()
+
 const { t } = useI18n()
-const activeView = ref<'tree' | 'summary' | 'raw'>('tree')
+const activeView = ref<'tree' | 'summary' | 'raw' | 'optimizer'>('tree')
 
 // Use stored values from ExplainResult (computed by parseExplainResult)
 const totalCost = computed(() => props.explainResult?.totalCost)
@@ -92,6 +99,14 @@ const formattedTotalCost = computed(() => {
       >
         {{ t('pages.queries.explain.rawView') }}
       </button>
+      <button
+        class="text-xs font-medium px-2 py-0.5 rounded transition-colors inline-flex items-center gap-1.5"
+        :class="activeView === 'optimizer' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'"
+        @click="activeView = 'optimizer'"
+      >
+        <Sparkles class="h-3 w-3 text-amber-500" />
+        {{ t('pages.queries.explain.optimizerView') }}
+      </button>
     </div>
 
     <!-- Loading state -->
@@ -151,6 +166,12 @@ const formattedTotalCost = computed(() => {
         v-else-if="activeView === 'raw' && explainResult"
         :raw="explainResult.raw"
         :format="explainResult.format"
+      />
+      <ExplainPlanAiOptimizer
+        v-else-if="activeView === 'optimizer' && explainResult"
+        :explain-result="explainResult"
+        @apply-sql="emit('applySql', $event)"
+        @ask-ai="emit('askAi', $event)"
       />
     </div>
   </div>

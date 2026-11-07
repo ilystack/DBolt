@@ -26,6 +26,7 @@ import {
 } from './dataTableHelpers'
 import ForeignKeysTab from './ForeignKeysTab.vue'
 import IndexesTab from './IndexesTab.vue'
+import MockDataGeneratorModal from './MockDataGeneratorModal.vue'
 import SchemaTab from './SchemaTab.vue'
 import TriggersTab from './TriggersTab.vue'
 
@@ -177,6 +178,7 @@ const isSaving = ref(false)
 
 // --- Export state ---
 const isExporting = ref(false)
+const mockDataModalOpen = ref(false)
 
 const { withMinLoadingTime } = useMinLoadingTime()
 
@@ -1040,6 +1042,18 @@ watch(
           <span v-else class="i-carbon-download h-3.5 w-3.5" />
         </Button>
 
+        <!-- Mock Data Generator button -->
+        <Button
+          variant="outline"
+          size="sm"
+          class="text-xs flex-shrink-0 h-7 gap-1"
+          :title="'Generate & Seed Mock Data'"
+          @click.stop="mockDataModalOpen = true"
+        >
+          <span class="i-carbon-magic-wand h-3.5 w-3.5 text-primary" />
+          <span>Mock Data</span>
+        </Button>
+
         <!-- Apply Filters button -->
         <Button
           size="sm"
@@ -1413,6 +1427,17 @@ watch(
         </div>
       </DialogContent>
     </Dialog>
+
+    <!-- Mock Data Generator Modal -->
+    <MockDataGeneratorModal
+      :open="mockDataModalOpen"
+      :connection-id="connectionId"
+      :database="database"
+      :schema="schema"
+      :table-name="tableName"
+      @update:open="mockDataModalOpen = $event"
+      @seeded="refresh"
+    />
   </div>
 </template>
 

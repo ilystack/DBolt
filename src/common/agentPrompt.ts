@@ -12,16 +12,29 @@ export type SystemPromptLayers = {
   sidebarContext?: string
 }
 
-export const buildAgentModeInstructions = (auto: boolean): string[] => [
-  `## Mode: ${auto ? 'AUTO' : 'ASK'}`,
-  'Permitted read-only queries and metadata reads execute automatically in both modes.',
-  auto
-    ? 'Permitted inserts and updates execute automatically in AUTO mode.'
-    : 'Permitted inserts and updates require approval in ASK mode.',
-  'All permitted deletes and structure/administration changes require approval in both modes, including CREATE, ALTER, DROP, DELETE with or without WHERE, and TRUNCATE.',
-  'Submit the tool call so the application can apply current permissions and saved confirmation rules and display any required approval card. Do not substitute a conversational approval question for that card.',
-  'Approval does not grant a denied permission. If an action is blocked or rejected, do not retry it or use another tool to bypass the decision. Wait for an explicit user request to retry.',
-]
+export const buildAgentModeInstructions = (auto: boolean | string): string[] => {
+  const isPlan = auto === 'Plan' || auto === 'PLAN'
+  if (isPlan) {
+    return [
+      '## Mode: PLAN',
+      'You are in planning mode. Formulate a structured step-by-step plan for the user.',
+      'Do not execute destructive, insert, update, or schema modification operations in this turn.',
+      'Read-only queries to explore structure or sample data are permitted.',
+      'Present your plan clearly so the user can review and approve it.',
+    ]
+  }
+  const isAuto = auto === true || auto === 'AUTO' || auto === 'Auto' || auto === 'Agent'
+  return [
+    `## Mode: ${isAuto ? 'AUTO' : 'ASK'}`,
+    'Permitted read-only queries and metadata reads execute automatically in both modes.',
+    isAuto
+      ? 'Permitted inserts and updates execute automatically in AUTO mode.'
+      : 'Permitted inserts and updates require approval in ASK mode.',
+    'All permitted deletes and structure/administration changes require approval in both modes, including CREATE, ALTER, DROP, DELETE with or without WHERE, and TRUNCATE.',
+    'Submit the tool call so the application can apply current permissions and saved confirmation rules and display any required approval card. Do not substitute a conversational approval question for that card.',
+    'Approval does not grant a denied permission. If an action is blocked or rejected, do not retry it or use another tool to bypass the decision. Wait for an explicit user request to retry.',
+  ]
+}
 
 export const buildAgentPermissionInstructions = (sources: Array<{ connectionId: string, permissions?: AiPermissions }>): string[] => [
   '## Current DBolt AI permissions',

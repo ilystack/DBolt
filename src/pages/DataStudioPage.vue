@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import type { ServerConnection } from '@/store/connectionStore'
 import { onClickOutside } from '@vueuse/core'
+import {
+  Bot,
+  Check,
+  ChevronDown,
+  FileText,
+  HelpCircle,
+  PanelRight,
+  Plus,
+  SquarePen,
+  Trash2,
+} from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -96,7 +107,33 @@ function handleConfirmation(msgId: string, event: { toolCallId: string, action: 
 }
 
 const historyPanelOpen = ref(false)
-const permissionMenuOpen = ref(false)
+const modeMenuOpen = ref(false)
+const modePickerRef = ref<HTMLElement | null>(null)
+onClickOutside(modePickerRef, () => {
+  modeMenuOpen.value = false
+})
+
+const modeOptions = [
+  { value: 'Ask', label: 'Ask', icon: HelpCircle },
+  { value: 'Agent', label: 'Agent', icon: Bot },
+  { value: 'Plan', label: 'Plan', icon: FileText },
+] as const
+
+const currentMode = computed<'Ask' | 'Agent' | 'Plan'>(() => {
+  const m = activeSession.value?.permissionsMode
+  if (m === 'Auto')
+    return 'Agent'
+  if (m === 'Plan')
+    return 'Plan'
+  return 'Ask'
+})
+
+async function selectMode(mode: 'Ask' | 'Agent' | 'Plan') {
+  modeMenuOpen.value = false
+  const target = mode === 'Agent' ? 'Auto' : mode
+  await dataStudioStore.setSessionPermissionsMode(target as any)
+}
+
 const showModifyModal = ref(false)
 const selectedSourceIdx = ref<number>(-1)
 const addSourceOpen = ref(false)
@@ -122,7 +159,6 @@ const emptyHint = computed(() =>
     : t('dataStudio.agent.noSource'),
 )
 
-const sessionPermissionsMode = computed(() => activeSession.value?.permissionsMode ?? 'Ask')
 
 const availableAddConnections = computed(() => {
   const sessionConnIds = new Set(
@@ -204,10 +240,6 @@ async function confirmAddSource() {
   }
 }
 
-async function setAutoMode(auto: boolean) {
-  permissionMenuOpen.value = false
-  await dataStudioStore.setSessionPermissionsMode(auto ? 'Auto' : 'Ask')
-}
 
 async function switchSession(sessionId: string) {
   dataStudioStore.setActiveSession(sessionId)
@@ -282,9 +314,222 @@ function syncAllProviderModels() {
 
 <template>
   <AppLayout :hide-ai-button="true">
-    <div class="bg-background flex h-full">
-        <!-- History Panel (left sidebar) -->
-        <div v-if="historyPanelOpen" class="border-r border-border shrink-0 w-72 overflow-y-auto">
+    <div class="bg-background flex h-full w-full overflow-hidden relative">
+      <!-- Main Conversation Area -->
+      <div class="flex flex-1 flex-col min-w-0 h-full w-full relative">
+        <!-- Floating top-right controls (clean, borderless) -->
+        <div class="h-10 px-4 flex items-center justify-end shrink-0 gap-1.5 z-10 w-full">
+          <button
+            v-if="isLoading"
+            class="text-destructive rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:bg-destructive/10"
+            :title="t('dataStudio.agent.stop')"
+            @click="cancelSession"
+          >
+            <span class="i-carbon-stop-filled h-4 w-4" />
+          </button>
+          <button
+            v-if="hasMessages"
+            class="text-muted-foreground rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
+            :title="t('dataStudio.agent.clearChat')"
+            @click="clearChat"
+          >
+            <Trash2 class="h-4 w-4" />
+          </button>
+          <button
+            class="text-muted-foreground rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
+            :title="t('dataStudio.history.newSession')"
+            @click="startNewSession"
+          >
+            <SquarePen class="h-4 w-4" />
+          </button>
+          <button
+            class="text-muted-foreground rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
+            :class="{ 'text-foreground bg-muted/40': historyPanelOpen }"
+            :title="t('dataStudio.history.title')"
+            @click="historyPanelOpen = !historyPanelOpen"
+          >
+            <PanelRight class="h-4 w-4" />
+          </button>
+        </div>
+
+        <!-- Chat Panel -->
+        <div class="flex-1 min-h-0 w-full">
+          <ChatPanel
+            :messages="messages"
+            :is-loading="isLoading"
+            :error="error"
+            :empty-hint="emptyHint"
+            :input-placeholder="t('dataStudio.inputPlaceholder')"
+            :session-id="activeSession?.id ?? null"
+            :context-settings="lastSettings"
+            :stop-reason="stopReason"
+            :stop-message="stopMessage"
+            :progress="progress"
+            feature="dataStudio"
+            compact
+            @send="sendMessage"
+            @stop-loop="cancelSession"
+            @confirm-tool-call="handleConfirmation"
+            @model-change="onModelChange"
+            @model-picker-open="syncAllProviderModels"
+            @dismiss-error="dismissError"
+          >
+            <!-- toolbar-left: [+] button FIRST, then attached source chips -->
+            <template #toolbar-left>
+              <!-- Add source dropdown -->
+              <div ref="addSourcePickerRef" class="add-source-picker">
+                <button
+                  class="icon-button-sm"
+                  :aria-expanded="addSourceOpen"
+                  :title="t('dataStudio.addSource.title')"
+                  @click.stop="addSourceOpen = !addSourceOpen"
+                >
+                  <Plus class="h-4 w-4" />
+                </button>
+
+                <Transition name="menu-rise">
+                  <div v-if="addSourceOpen" class="add-source-menu" @click.stop>
+                    <div class="add-source-menu-title">
+                      {{ t('dataStudio.addSource.selectConnection') }}
+                    </div>
+
+                    <div class="add-source-search-wrap">
+                      <span class="add-source-search-icon i-carbon-search h-3.5 w-3.5" />
+                      <input
+                        v-model="addSourceQuery"
+                        class="add-source-search"
+                        :placeholder="t('dataStudio.addSource.searchPlaceholder')"
+                        autocomplete="off"
+                      >
+                    </div>
+
+                    <div class="add-source-list">
+                      <button
+                        v-for="conn in filteredAddConnections"
+                        :key="String(conn.id)"
+                        class="add-source-item"
+                        :class="{ 'add-source-item--selected': addSourceSelectedId === String(conn.id) }"
+                        @click="selectAddConnection(conn)"
+                      >
+                        <div class="add-source-item-icon">
+                          <img
+                            :src="getConnectionIcon(conn.type)"
+                            class="h-4 w-4 object-contain"
+                            :alt="conn.type"
+                          >
+                        </div>
+                        <div class="add-source-item-info">
+                          <span class="add-source-item-name">{{ conn.name }}</span>
+                          <span class="add-source-item-meta">{{ getConnectionMeta(conn) }}</span>
+                        </div>
+                        <span
+                          v-if="addSourceSelectedId === String(conn.id)"
+                          class="i-carbon-checkmark text-foreground ml-auto shrink-0 h-3.5 w-3.5"
+                        />
+                      </button>
+                      <div v-if="filteredAddConnections.length === 0" class="add-source-empty">
+                        {{ addSourceEmptyMessage }}
+                      </div>
+                    </div>
+
+                    <div v-if="addSourceSelectedId" class="add-source-permissions">
+                      <div class="add-source-permissions-header">
+                        <span class="i-carbon-security h-3.5 w-3.5" />
+                        <span class="text-xs font-semibold">
+                          {{ t('dataStudio.modifySource.accessPermissions') }}
+                        </span>
+                      </div>
+                      <div class="add-source-mode-row">
+                        <button
+                          class="mode-btn" :class="[addSourceMode === 'Ask' && 'mode-btn--active']"
+                          @click="addSourceMode = 'Ask'"
+                        >
+                          <span class="i-carbon-locked h-3.5 w-3.5" />
+                          <span>{{ t('aiPermissions.conversationReadOnly') }}</span>
+                        </button>
+                        <button
+                          class="mode-btn" :class="[addSourceMode === 'Inherit' && 'mode-btn--active']"
+                          @click="addSourceMode = 'Inherit'"
+                        >
+                          <span class="i-carbon-link h-3.5 w-3.5" />
+                          <span>{{ t('dataStudio.modifySource.inheritTitle') }}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="add-source-footer">
+                      <button
+                        class="add-source-connect-btn"
+                        :disabled="!addSourceSelectedId"
+                        @click="confirmAddSource"
+                      >
+                        <span class="i-carbon-data-connected h-3.5 w-3.5" />
+                        {{ t('dataStudio.addSource.connectSource') }}
+                      </button>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
+
+              <!-- Connected source chips -->
+              <button
+                v-for="(source, idx) in activeSessionSources"
+                :key="source.sourceId"
+                class="source-chip"
+                :title="t('dataStudio.modifySource.title')"
+                @click="openModifyModal(idx)"
+              >
+                <img
+                  :src="getConnectionIcon(source.databaseType)"
+                  class="shrink-0 h-3.5 w-3.5 object-contain"
+                  :alt="source.databaseType"
+                >
+                <span class="source-chip-name">{{ source.alias }}</span>
+                <span class="source-chip-edit i-carbon-settings h-3.5 w-3.5" />
+              </button>
+            </template>
+
+            <!-- toolbar-right: Mode selector (Ask / Agent / Plan) next to Send button -->
+            <template #toolbar-right>
+              <div ref="modePickerRef" class="relative">
+                <button
+                  class="mode-trigger-btn"
+                  :title="t('dataStudio.modifySource.accessPermissions')"
+                  @click.stop="modeMenuOpen = !modeMenuOpen"
+                >
+                  <span>{{ currentMode }}</span>
+                  <ChevronDown class="h-3 w-3 opacity-60 transition-transform duration-150" :class="{ 'rotate-180': modeMenuOpen }" />
+                </button>
+
+                <Transition name="menu-rise">
+                  <div v-if="modeMenuOpen" class="mode-dropdown-menu" @click.stop>
+                    <button
+                      v-for="opt in modeOptions"
+                      :key="opt.value"
+                      class="mode-menu-row"
+                      :class="{ 'mode-menu-row--active': currentMode === opt.value }"
+                      @click="selectMode(opt.value)"
+                    >
+                      <div class="flex items-center gap-2">
+                        <component :is="opt.icon" class="h-3.5 w-3.5" />
+                        <span class="font-medium text-xs">{{ opt.label }}</span>
+                      </div>
+                      <Check v-if="currentMode === opt.value" class="h-3.5 w-3.5 text-foreground ml-auto" />
+                    </button>
+                  </div>
+                </Transition>
+              </div>
+            </template>
+          </ChatPanel>
+        </div>
+      </div>
+
+      <!-- History Panel (Right Sidebar) -->
+      <Transition name="sidebar-slide">
+        <div
+          v-if="historyPanelOpen"
+          class="border-l border-border shrink-0 w-72 md:w-80 h-full overflow-y-auto bg-background transition-all duration-200"
+        >
           <SessionHistoryPanel
             @select="switchSession"
             @delete="deleteSession"
@@ -292,245 +537,7 @@ function syncAllProviderModels() {
             @close="historyPanelOpen = false"
           />
         </div>
-
-        <!-- Main Conversation Area -->
-        <div class="flex flex-1 flex-col min-w-0">
-          <!-- Header -->
-          <div class="px-4 py-2 border-b border-border flex shrink-0 items-center justify-between">
-            <div class="flex gap-2 items-center">
-              <button
-                class="text-muted-foreground rounded inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted"
-                :class="{ 'bg-muted text-foreground': historyPanelOpen }"
-                :title="t('dataStudio.history.title')"
-                @click="historyPanelOpen = !historyPanelOpen"
-              >
-                <span class="i-carbon-time h-3.5 w-3.5" />
-              </button>
-              <span class="text-caption tracking-wider font-bold px-3 py-0.5 border border-border rounded-full">
-                {{ t('dataStudio.title') }}
-              </span>
-            </div>
-            <div class="flex gap-2 items-center">
-              <button
-                v-if="isLoading"
-                class="text-destructive-text rounded inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:bg-destructive/10"
-                :title="t('dataStudio.agent.stop')"
-                @click="cancelSession"
-              >
-                <span class="i-carbon-stop-filled h-3.5 w-3.5" />
-              </button>
-              <button
-                class="text-muted-foreground rounded inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted"
-                :title="t('dataStudio.history.newSession')"
-                @click="startNewSession"
-              >
-                <span class="i-carbon-add h-3.5 w-3.5" />
-              </button>
-              <button
-                v-if="hasMessages"
-                class="text-muted-foreground rounded inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted"
-                :title="t('dataStudio.agent.clearChat')"
-                @click="clearChat"
-              >
-                <span class="i-carbon-trash-can h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-
-          <!-- Chat Panel -->
-          <div class="flex-1 min-h-0">
-            <ChatPanel
-              :messages="messages"
-              :is-loading="isLoading"
-              :error="error"
-              :empty-hint="emptyHint"
-              :input-placeholder="t('dataStudio.inputPlaceholder')"
-              :session-id="activeSession?.id ?? null"
-              :context-settings="lastSettings"
-              :stop-reason="stopReason"
-              :stop-message="stopMessage"
-              :progress="progress"
-              feature="dataStudio"
-              compact
-              @send="sendMessage"
-              @stop-loop="cancelSession"
-              @confirm-tool-call="handleConfirmation"
-              @model-change="onModelChange"
-              @model-picker-open="syncAllProviderModels"
-              @dismiss-error="dismissError"
-            >
-              <template #toolbar-left>
-                <!-- Connected source chips -->
-                <button
-                  v-for="(source, idx) in activeSessionSources"
-                  :key="source.sourceId"
-                  class="source-chip"
-                  :title="t('dataStudio.modifySource.title')"
-                  @click="openModifyModal(idx)"
-                >
-                  <img
-                    :src="getConnectionIcon(source.databaseType)"
-                    class="shrink-0 h-3.5 w-3.5 object-contain"
-                    :alt="source.databaseType"
-                  >
-                  <span class="source-chip-name">{{ source.alias }}</span>
-                  <span class="source-chip-edit i-carbon-settings h-3.5 w-3.5" />
-                </button>
-
-                <!-- Add source dropdown -->
-                <div ref="addSourcePickerRef" class="add-source-picker">
-                  <button
-                    class="icon-button-sm"
-                    :aria-expanded="addSourceOpen"
-                    :title="t('dataStudio.addSource.title')"
-                    @click.stop="addSourceOpen = !addSourceOpen"
-                  >
-                    <span class="i-carbon-add-alt h-3.5 w-3.5" />
-                  </button>
-
-                  <Transition name="menu-rise">
-                    <div v-if="addSourceOpen" class="add-source-menu" @click.stop>
-                      <div class="add-source-menu-title">
-                        {{ t('dataStudio.addSource.selectConnection') }}
-                      </div>
-
-                      <div class="add-source-search-wrap">
-                        <span class="add-source-search-icon i-carbon-search h-3.5 w-3.5" />
-                        <input
-                          v-model="addSourceQuery"
-                          class="add-source-search"
-                          :placeholder="t('dataStudio.addSource.searchPlaceholder')"
-                          autocomplete="off"
-                        >
-                      </div>
-
-                      <div class="add-source-list">
-                        <button
-                          v-for="conn in filteredAddConnections"
-                          :key="String(conn.id)"
-                          class="add-source-item"
-                          :class="{ 'add-source-item--selected': addSourceSelectedId === String(conn.id) }"
-                          @click="selectAddConnection(conn)"
-                        >
-                          <div class="add-source-item-icon">
-                            <img
-                              :src="getConnectionIcon(conn.type)"
-                              class="h-4 w-4 object-contain"
-                              :alt="conn.type"
-                            >
-                          </div>
-                          <div class="add-source-item-info">
-                            <span class="add-source-item-name">{{ conn.name }}</span>
-                            <span class="add-source-item-meta">{{ getConnectionMeta(conn) }}</span>
-                          </div>
-                          <span
-                            v-if="addSourceSelectedId === String(conn.id)"
-                            class="i-carbon-checkmark text-foreground ml-auto shrink-0 h-3.5 w-3.5"
-                          />
-                        </button>
-                        <div v-if="filteredAddConnections.length === 0" class="add-source-empty">
-                          {{ addSourceEmptyMessage }}
-                        </div>
-                      </div>
-
-                      <div v-if="addSourceSelectedId" class="add-source-permissions">
-                        <div class="add-source-permissions-header">
-                          <span class="i-carbon-security h-3.5 w-3.5" />
-                          <span class="text-xs font-semibold">
-                            {{ t('dataStudio.modifySource.accessPermissions') }}
-                          </span>
-                        </div>
-                        <div class="add-source-mode-row">
-                          <button
-                            class="mode-btn" :class="[addSourceMode === 'Ask' && 'mode-btn--active']"
-                            @click="addSourceMode = 'Ask'"
-                          >
-                            <span class="i-carbon-locked h-3.5 w-3.5" />
-                            <span>{{ t('aiPermissions.conversationReadOnly') }}</span>
-                          </button>
-                          <button
-                            class="mode-btn" :class="[addSourceMode === 'Inherit' && 'mode-btn--active']"
-                            @click="addSourceMode = 'Inherit'"
-                          >
-                            <span class="i-carbon-link h-3.5 w-3.5" />
-                            <span>{{ t('dataStudio.modifySource.inheritTitle') }}</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div class="add-source-footer">
-                        <button
-                          class="add-source-connect-btn"
-                          :disabled="!addSourceSelectedId"
-                          @click="confirmAddSource"
-                        >
-                          <span class="i-carbon-data-connected h-3.5 w-3.5" />
-                          {{ t('dataStudio.addSource.connectSource') }}
-                        </button>
-                      </div>
-                    </div>
-                  </Transition>
-                </div>
-
-                <!-- Permission mode picker -->
-                <div class="permission-picker">
-                  <button
-                    class="permission-trigger"
-                    :disabled="activeSessionSources.length === 0"
-                    :aria-expanded="permissionMenuOpen"
-                    :title="t('dataStudio.modifySource.accessPermissions')"
-                    @click.stop="activeSessionSources.length > 0 && (permissionMenuOpen = !permissionMenuOpen)"
-                  >
-                    <span
-                      class="permission-trigger-icon h-4 w-4"
-                      :class="sessionPermissionsMode === 'Auto' ? 'i-carbon-unlocked' : 'i-carbon-locked'"
-                    />
-                    <span class="permission-trigger-label">
-                      {{ sessionPermissionsMode === 'Auto' ? t('dataStudio.modifySource.modeFull') : t('dataStudio.modifySource.modeDefault') }}
-                    </span>
-                    <span class="permission-trigger-chevron i-carbon-chevron-down h-3.5 w-3.5" />
-                  </button>
-                  <div v-if="permissionMenuOpen" class="permission-menu">
-                    <div class="permission-menu-title">
-                      {{ t('dataStudio.modifySource.accessPermissions') }}
-                    </div>
-                    <button
-                      class="permission-menu-item"
-                      :class="{ 'permission-menu-item--active': sessionPermissionsMode === 'Ask' }"
-                      @click="setAutoMode(false)"
-                    >
-                      <span class="permission-menu-icon i-carbon-locked h-3.5 w-3.5" />
-                      <span class="permission-menu-label">
-                        {{ t('dataStudio.modifySource.modeDefault') }}
-                      </span>
-                      <span
-                        v-if="sessionPermissionsMode === 'Ask'"
-                        class="permission-check i-carbon-checkmark h-3.5 w-3.5"
-                      />
-                    </button>
-                    <button
-                      class="permission-menu-item"
-                      :class="{ 'permission-menu-item--active': sessionPermissionsMode === 'Auto' }"
-                      @click="setAutoMode(true)"
-                    >
-                      <span class="permission-menu-icon i-carbon-unlocked h-3.5 w-3.5" />
-                      <span class="permission-menu-label">
-                        {{ t('dataStudio.modifySource.modeFull') }}
-                      </span>
-                      <span
-                        v-if="sessionPermissionsMode === 'Auto'"
-                        class="permission-check i-carbon-checkmark h-3.5 w-3.5"
-                      />
-                    </button>
-                  </div>
-                </div>
-              </template>
-              <template #empty>
-                <div class="i-carbon-ibm-watsonx-assistant text-muted-foreground h-12 w-12" />
-              </template>
-            </ChatPanel>
-          </div>
-        </div>
+      </Transition>
 
       <!-- Modals -->
       <ModifySourceModal v-model:open="showModifyModal" :source-idx="selectedSourceIdx" />
@@ -599,8 +606,8 @@ function syncAllProviderModels() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   border: none;
   background: transparent;
@@ -610,20 +617,20 @@ function syncAllProviderModels() {
 }
 
 .icon-button-sm:hover {
-  background: hsl(var(--muted));
+  background: hsl(var(--muted) / 0.4);
   color: hsl(var(--foreground));
 }
 
 .source-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 24px;
-  max-width: 112px;
-  padding: 0 8px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 9999px;
-  background: hsl(var(--muted) / 0.5);
+  gap: 5px;
+  height: 26px;
+  max-width: 140px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: hsl(var(--muted-foreground));
   font-size: var(--font-size-dense);
   font-weight: 500;
@@ -632,7 +639,7 @@ function syncAllProviderModels() {
 }
 
 .source-chip:hover {
-  border-color: hsl(var(--foreground) / 0.3);
+  background: hsl(var(--muted) / 0.4);
   color: hsl(var(--foreground));
 }
 
@@ -872,120 +879,74 @@ function syncAllProviderModels() {
   opacity: 0.9;
 }
 
-/* ── Permission picker ── */
+/* ── Mode selector (Ask / Agent / Plan) ── */
 
-.permission-picker {
-  position: relative;
-}
-
-.permission-trigger {
+.mode-trigger-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 9999px;
-  background: hsl(var(--muted) / 0.5);
-  color: hsl(var(--foreground));
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
   font-size: var(--font-size-dense);
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
 }
 
-.permission-trigger:hover {
-  background: hsl(var(--muted));
+.mode-trigger-btn:hover {
+  background: hsl(var(--muted) / 0.4);
   color: hsl(var(--foreground));
 }
 
-.permission-trigger:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.permission-trigger:disabled:hover {
-  background: hsl(var(--muted) / 0.5);
-  color: hsl(var(--muted-foreground));
-}
-
-.permission-trigger-icon {
-  flex-shrink: 0;
-}
-
-.permission-trigger-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60px;
-}
-
-.permission-trigger-chevron {
-  flex-shrink: 0;
-  transition: transform 0.18s ease;
-}
-
-.permission-trigger[aria-expanded='true'] .permission-trigger-chevron {
-  transform: rotate(180deg);
-}
-
-.permission-menu {
+.mode-dropdown-menu {
   position: absolute;
-  bottom: calc(100% + 4px);
-  left: 0;
+  bottom: calc(100% + 6px);
+  right: 0;
   z-index: 50;
-  min-width: 160px;
-  padding: 6px;
+  min-width: 140px;
+  padding: 4px;
   border: 1px solid hsl(var(--border));
-  border-radius: 10px;
+  border-radius: 8px;
   background: hsl(var(--popover));
   box-shadow: 0 8px 24px hsl(0 0% 0% / 0.12);
 }
 
-.permission-menu-title {
-  padding: 4px 8px 6px;
-  font-size: var(--font-size-caption);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: hsl(var(--muted-foreground));
-}
-
-.permission-menu-item {
+.mode-menu-row {
   display: flex;
-  width: 100%;
   align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border-radius: 6px;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
   border: none;
+  border-radius: 6px;
   background: transparent;
-  color: hsl(var(--foreground));
-  font-size: var(--font-size-body);
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 0.12s;
-}
-
-.permission-menu-item:hover {
-  background: hsl(var(--muted) / 0.5);
-}
-
-.permission-menu-icon {
   color: hsl(var(--muted-foreground));
-  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.12s;
 }
 
-.permission-menu-item--active .permission-menu-icon {
-  color: hsl(var(--primary-text));
+.mode-menu-row:hover {
+  background: hsl(var(--muted) / 0.5);
+  color: hsl(var(--foreground));
 }
 
-.permission-menu-label {
-  flex: 1;
+.mode-menu-row--active {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.3);
 }
 
-.permission-check {
-  color: hsl(var(--primary-text));
-  flex-shrink: 0;
+.sidebar-slide-enter-active,
+.sidebar-slide-leave-active {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sidebar-slide-enter-from,
+.sidebar-slide-leave-to {
+  margin-right: -20rem;
+  opacity: 0;
 }
 
 .menu-rise-enter-active {

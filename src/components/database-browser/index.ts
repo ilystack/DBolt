@@ -1,5 +1,6 @@
 export { default as DataTableView } from './DataTableView.vue'
 export { default as DbTypeIcon } from './DbTypeIcon.vue'
+export { default as MockDataGeneratorModal } from './MockDataGeneratorModal.vue'
 export { default as QueryResultPanel } from './QueryResultPanel.vue'
 export { default as QueryTabs } from './QueryTabs.vue'
 export { default as ErDiagramView } from '@/components/er-diagram/ErDiagramView.vue'

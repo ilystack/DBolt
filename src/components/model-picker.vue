@@ -49,8 +49,8 @@ watch(open, (value) => {
 
 const triggerClasses = computed(() =>
   props.compact
-    ? 'h-7 rounded-full px-2 text-xs bg-muted/40 hover:bg-muted/60 min-w-0 flex-1 max-w-[140px] inline-flex items-center justify-center cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring model-picker-trigger'
-    : 'h-8 rounded-full px-3 bg-muted/50 hover:bg-muted min-w-[180px] inline-flex items-center justify-center cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring model-picker-trigger',
+    ? 'h-7 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 min-w-0 inline-flex items-center justify-center cursor-pointer transition-colors focus-visible:outline-none model-picker-trigger'
+    : 'h-8 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 min-w-0 inline-flex items-center justify-center cursor-pointer transition-colors focus-visible:outline-none model-picker-trigger',
 )
 
 const panelClasses = computed(() =>
@@ -271,6 +271,7 @@ function selectModel(value: string) {
 }
 
 .model-picker-trigger {
-  border: 1px solid hsl(var(--border));
+  border: none;
+  background: transparent;
 }
 </style>

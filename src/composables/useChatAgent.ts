@@ -202,7 +202,7 @@ function buildSystemPrompt({ schema, sources, permissionsMode }: {
   }
 
   // Mode instructions
-  parts.push(...buildAgentModeInstructions(permissionsMode === 'AUTO'))
+  parts.push(...buildAgentModeInstructions(permissionsMode ?? 'ASK'))
   parts.push('')
 
   // Tool usage rules
@@ -290,7 +290,8 @@ export function useChatAgent(config: UseChatAgentConfig) {
 
       // Determine mode from autoMode config or permissions mode
       const autoMode = config.autoMode?.value ?? false
-      const permissionsMode = autoMode ? 'AUTO' : 'ASK'
+      const sessionPermissionsMode = config.sessionStore.activeSession.value?.permissionsMode
+      const permissionsMode = sessionPermissionsMode === 'Plan' ? 'Plan' : (autoMode ? 'AUTO' : 'ASK')
 
       const { useAppStore } = await import('@/store/appStore')
       const appStore = useAppStore()

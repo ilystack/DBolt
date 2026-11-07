@@ -45,6 +45,10 @@ export function useAppUpdater() {
       return null
 
     try {
+      if (process.env.NODE_ENV !== 'test' && (typeof window === 'undefined' || !(window as any).__TAURI_INTERNALS__)) {
+        isUpToDate.value = true
+        return null
+      }
       isChecking.value = true
       isUpToDate.value = false
       includeSkippedInCheck = !!options.includeSkipped
@@ -74,11 +78,16 @@ export function useAppUpdater() {
       }
     }
     catch (error) {
-      console.error('Failed to check for updates:', error)
-      updateError.value = error instanceof Error ? error.message : String(error)
+      console.warn('Failed to check for updates:', error)
+      const msg = error instanceof Error ? error.message : String(error)
+      if (msg.includes('Cannot read properties of undefined') || msg.includes('invoke')) {
+        isUpToDate.value = true
+        return null
+      }
+      updateError.value = msg
       if (showToast) {
         toast.error(t('updater.checkFailed'), {
-          description: error instanceof Error ? error.message : String(error),
+          description: msg,
         })
       }
       return null

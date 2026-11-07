@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Input } from '@/components/ui/input'
 import { ConnectionStatus, useConnectionStore, useDatabaseStore } from '@/store'
+import MockDataGeneratorModal from '@/components/database-browser/MockDataGeneratorModal.vue'
 import TreeGroup from './TreeGroup.vue'
 
 type Props = {
@@ -204,7 +205,10 @@ async function refreshDatabase(dbName: string) {
 }
 
 // Context menu action handler
-type ContextAction = 'viewData' | 'viewStructure' | 'selectTopN' | 'createScript' | 'exportData' | 'showErDiagram' | 'dropTable' | 'truncateTable'
+type ContextAction = 'viewData' | 'viewStructure' | 'selectTopN' | 'createScript' | 'exportData' | 'generateMockData' | 'showErDiagram' | 'dropTable' | 'truncateTable'
+
+const mockModalOpen = ref(false)
+const mockModalTarget = ref<{ tableName: string, database: string, schema?: string } | null>(null)
 
 function handleContextAction(action: ContextAction) {
   if (!contextMenuTable.value)
@@ -216,6 +220,10 @@ function handleContextAction(action: ContextAction) {
     selectTopN: () => emit('selectTopN', table, database, schema, 100),
     createScript: () => emit('createScript', table, database, schema),
     exportData: () => emit('exportData', table, database, schema),
+    generateMockData: () => {
+      mockModalTarget.value = { tableName: table.name, database, schema }
+      mockModalOpen.value = true
+    },
     showErDiagram: () => emit('showErDiagram', database, schema),
     dropTable: () => emit('dropTable', table, database, schema),
     truncateTable: () => emit('truncateTable', table, database, schema),
@@ -794,6 +802,13 @@ defineExpose({ refresh })
           <span class="i-carbon-download mr-2 h-3.5 w-3.5" />
           {{ t('components.databaseBrowser.contextMenu.exportData') }}
         </div>
+        <div
+          class="text-sm px-2 py-1.5 rounded-sm flex cursor-pointer items-center hover:text-accent-foreground hover:bg-accent"
+          @click="handleContextAction('generateMockData')"
+        >
+          <span class="i-carbon-magic-wand mr-2 h-3.5 w-3.5 text-primary" />
+          {{ t('components.databaseBrowser.contextMenu.generateMockData') }}
+        </div>
         <div class="my-1 bg-border h-px" />
         <div
           class="text-sm text-destructive-text px-2 py-1.5 rounded-sm flex cursor-pointer items-center hover:text-destructive-text hover:bg-destructive/10"
@@ -811,5 +826,16 @@ defineExpose({ refresh })
         </div>
       </div>
     </div>
+
+    <!-- Mock Data Generator Modal -->
+    <MockDataGeneratorModal
+      v-if="mockModalTarget && connectionId"
+      :open="mockModalOpen"
+      :connection-id="connectionId"
+      :database="mockModalTarget.database"
+      :schema="mockModalTarget.schema"
+      :table-name="mockModalTarget.tableName"
+      @update:open="mockModalOpen = $event"
+    />
   </div>
 </template>

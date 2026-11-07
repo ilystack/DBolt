@@ -261,23 +261,22 @@ defineExpose({ refresh })
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 999px;
-  background: hsl(var(--background));
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: hsl(var(--muted-foreground));
   font-size: var(--font-size-dense);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   cursor: pointer;
   transition:
-    border-color 120ms ease,
     color 120ms ease,
     background-color 120ms ease;
 }
 
 .context-indicator__trigger:hover {
-  border-color: hsl(var(--foreground) / 0.25);
+  background: hsl(var(--muted) / 0.4);
   color: hsl(var(--foreground));
 }
 

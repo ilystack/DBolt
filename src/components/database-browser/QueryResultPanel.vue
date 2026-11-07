@@ -7,6 +7,7 @@ import type { ColumnFilter } from '@/types/grid'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { ExplainPlanPanel } from '@/components/explain-plan'
 import { DataGrid } from '@/components/grid'
 import { Button } from '@/components/ui/button'
@@ -21,7 +22,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useDataGridCopy } from '@/composables/useDataGridCopy'
+import { toast } from '@/composables/useNotifications'
 import { useConnectionStore } from '@/store'
+import { useTabStore } from '@/store/tabStore'
 import { formatApiError, isApiError } from '@/types/api'
 
 type Props = {
@@ -82,6 +85,22 @@ watch(() => props.results, (res) => {
   if (res && !props.explainPlan)
     activeOutputView.value = 'results'
 })
+
+const router = useRouter()
+
+function handleApplySql(sql: string) {
+  const tabStore = useTabStore()
+  const tab = tabStore.createTab(props.connectionId, props.database, props.schema)
+  tab.content = sql
+  tab.name = 'Optimize Index'
+  toast.success('Recommended index DDL opened in a new query tab')
+}
+
+function handleAskAi(prompt: string) {
+  navigator.clipboard.writeText(prompt).catch(() => {})
+  toast.info('Query optimization context copied. Redirecting to Data Studio...')
+  router.push('/data-studio')
+}
 
 const { t } = useI18n()
 const copyUtil = useDataGridCopy()
@@ -530,6 +549,8 @@ const handleExport = (action: typeof exportActions[number]) => {
         :explain-result="explainPlan"
         :loading="isExplaining || false"
         :error="explainError"
+        @apply-sql="handleApplySql"
+        @ask-ai="handleAskAi"
       />
     </div>
 

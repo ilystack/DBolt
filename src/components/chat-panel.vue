@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AgentToolCall, SessionProgress } from '@/store/dataStudioStore'
 import type { ChatMessage } from '@/types/chat'
+import { Bot, ShieldCheck } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -254,19 +255,20 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex flex-col h-full w-full">
     <!-- Header slot -->
-    <div v-if="$slots.header" class="shrink-0">
+    <div v-if="$slots.header" class="shrink-0 w-full">
       <slot name="header" />
     </div>
 
     <!-- Messages area -->
-    <div class="flex-1 min-h-0">
-      <ScrollArea ref="scrollAreaRef" class="h-full">
+    <div class="flex-1 min-h-0 w-full">
+      <ScrollArea ref="scrollAreaRef" class="h-full w-full">
         <!-- Empty state -->
-        <div v-if="messages.length === 0 && !isLoading" class="px-4 text-center flex flex-col h-full items-center justify-center">
-          <div class="i-carbon-ibm-watsonx-assistant text-muted-foreground mb-4 h-16 w-16" />
-          <p class="text-sm text-muted-foreground max-w-xs">
+        <div v-if="messages.length === 0 && !isLoading" class="px-4 text-center flex flex-col h-full w-full items-center justify-center select-none">
+          <Bot class="h-16 w-16 text-muted-foreground/80 mb-3 stroke-[1.5]" />
+          <h2 class="text-xl font-medium text-foreground tracking-tight mb-1">What I can do for you?</h2>
+          <p class="text-xs text-muted-foreground max-w-sm">
             <slot name="empty">
               {{ emptyHint || t('dataStudio.agent.emptyState') }}
             </slot>
@@ -390,14 +392,6 @@ onBeforeUnmount(() => {
         <div class="chat-toolbar">
           <div class="toolbar-left">
             <slot name="toolbar-left" />
-          </div>
-
-          <div class="toolbar-center">
-            <ContextIndicator
-              ref="contextIndicatorRef"
-              :session-id="sessionId"
-              :settings="contextSettings ?? null"
-            />
             <ModelPicker
               v-if="showModelPicker"
               :groups="modelGroups"
@@ -409,15 +403,31 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <button
-            class="send-button"
-            :class="{ 'send-button--stop': isLoading }"
-            :disabled="!canSend && !isLoading"
-            @click="isLoading ? emit('stopLoop') : sendMessage()"
-          >
-            <Spinner v-if="isLoading" size="sm" />
-            <span v-else class="i-carbon-arrow-up h-4 w-4" />
-          </button>
+          <div class="toolbar-right">
+            <!-- Zero Data Leak Privacy Guard Badge -->
+            <div
+              class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md select-none cursor-help"
+              title="Zero Data Leak Guard: DBolt only provides schema metadata. Production table row values are never transmitted to AI models."
+            >
+              <ShieldCheck class="h-3 w-3" />
+              <span>Zero Data Leak</span>
+            </div>
+            <ContextIndicator
+              ref="contextIndicatorRef"
+              :session-id="sessionId"
+              :settings="contextSettings ?? null"
+            />
+            <slot name="toolbar-right" />
+            <button
+              class="send-button"
+              :class="{ 'send-button--stop': isLoading }"
+              :disabled="!canSend && !isLoading"
+              @click="isLoading ? emit('stopLoop') : sendMessage()"
+            >
+              <Spinner v-if="isLoading" size="sm" />
+              <span v-else class="i-carbon-arrow-up h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -435,8 +445,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .chat-input-area {
-  padding: 8px;
+  padding: 8px 16px 16px;
   position: relative;
+  width: 100%;
 }
 
 .chat-input-wrapper {
@@ -472,22 +483,26 @@ onBeforeUnmount(() => {
 .chat-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 0 10px;
-  height: 36px;
-  border-top: 1px solid hsl(var(--border));
+  padding: 4px 10px;
+  min-height: 38px;
+  border-top: 1px solid hsl(var(--border) / 0.6);
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
 
-.toolbar-center {
-  flex: 1;
+.toolbar-right {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .send-button {

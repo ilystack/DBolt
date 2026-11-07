@@ -1,3 +1,4 @@
+export { default as ExplainPlanAiOptimizer } from './ExplainPlanAiOptimizer.vue'
 export { default as ExplainPlanNodeTree } from './ExplainPlanNodeTree.vue'
 export { default as ExplainPlanPanel } from './ExplainPlanPanel.vue'
 export { default as ExplainPlanRawView } from './ExplainPlanRawView.vue'

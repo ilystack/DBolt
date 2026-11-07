@@ -14,7 +14,7 @@ export type DataSourcePermissions = {
   delete: boolean
 }
 
-export type PermissionsMode = 'Ask' | 'Auto'
+export type PermissionsMode = 'Ask' | 'Auto' | 'Plan'
 
 export type SourcePermissionsMode = 'inherit' | 'custom'
 

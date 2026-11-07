@@ -9,15 +9,12 @@ import { Label } from '@/components/ui/label'
 // Separator is rendered inline as a styled div
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ThemeType, useAppStore } from '@/store/appStore'
-import { useEntitlementStore } from '@/store/entitlementStore'
 import AiSettings from '@/views/setting/ai-settings.vue'
 import JreDriverSection from '@/views/setting/jre-driver-section.vue'
 import McpBridge from '@/views/setting/mcp-bridge.vue'
-import PlanSection from '@/views/setting/plan-section.vue'
 
 const appStore = useAppStore()
 const { t, locale: _locale } = useI18n()
-const entitlementStore = useEntitlementStore()
 
 const preferencesSaved = ref(false)
 watch(() => [appStore.themeType, appStore.editorConfig, appStore.queryConfig], () => {
@@ -156,13 +153,13 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
 
       <!-- Tabbed settings content -->
       <Tabs
-        default-value="general"
+        default-value="appearance"
         class="px-6 py-4 flex-1 overflow-y-auto"
       >
         <div class="mx-auto max-w-4xl">
           <TabsList class="mb-6 flex-wrap h-auto max-w-full justify-start">
-            <TabsTrigger value="general">
-              {{ t('pages.settings.general.title') }}
+            <TabsTrigger value="appearance">
+              {{ t('pages.settings.appearance.title') }}
             </TabsTrigger>
             <TabsTrigger value="editor">
               {{ t('pages.settings.editor.title') }}
@@ -179,14 +176,17 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
             <TabsTrigger value="jre">
               {{ t('pages.settings.jre.title') }}
             </TabsTrigger>
+            <TabsTrigger value="about">
+              {{ t('pages.settings.about.title') }}
+            </TabsTrigger>
           </TabsList>
 
-          <!-- General Tab -->
-          <TabsContent value="general" class="mt-0 space-y-6">
+          <!-- Appearance Tab -->
+          <TabsContent value="appearance" class="mt-0 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>{{ t('pages.settings.general.title') }}</CardTitle>
-                <CardDescription>{{ t('pages.settings.general.description') }}</CardDescription>
+                <CardTitle>{{ t('pages.settings.appearance.title') }}</CardTitle>
+                <CardDescription>{{ t('pages.settings.appearance.description') }}</CardDescription>
               </CardHeader>
               <CardContent class="space-y-6">
                 <!-- Theme selector -->
@@ -236,18 +236,6 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                 </div>
               </CardContent>
             </Card>
-            <section aria-labelledby="settings-account-plan-title" class="space-y-3">
-              <div class="space-y-1">
-                <h2 id="settings-account-plan-title" class="text-base font-semibold">
-                  {{ t('plan.section.title') }}
-                </h2>
-                <p class="text-sm text-muted-foreground">
-                  {{ t('plan.section.desc') }}
-                </p>
-              </div>
-              <PlanSection />
-            </section>
-            <SettingsAbout />
           </TabsContent>
 
           <!-- Editor Tab -->
@@ -511,6 +499,11 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
           <!-- JRE & Drivers Tab -->
           <TabsContent value="jre" class="mt-0">
             <JreDriverSection />
+          </TabsContent>
+
+          <!-- About Tab -->
+          <TabsContent value="about" class="mt-0 space-y-6">
+            <SettingsAbout />
           </TabsContent>
         </div>
       </Tabs>
