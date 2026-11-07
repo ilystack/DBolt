@@ -38,6 +38,10 @@ export default antfu({
     'style/eol-last': ['error', 'always'],
     'ts/consistent-type-definitions': ['error', 'type'],
     'e18e/prefer-static-regex': 'off',
+    'e18e/prefer-array-at': 'off',
+    'e18e/prefer-array-some': 'off',
+    'e18e/prefer-array-from-map': 'off',
+    'e18e/prefer-timer-args': 'off',
     'node/prefer-global/process': 'off',
   },
 })

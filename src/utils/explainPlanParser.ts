@@ -382,7 +382,7 @@ function parseSqlServerOperator(line: string): { nodeType: string, relation?: st
       // Format: [db].[schema].[table].[index] or [schema].[table].[index]
       if (parts.length >= 3) {
         relation = parts[parts.length - 2] // second-to-last is the table
-        index = parts.at(-1) // last is the index name
+        index = parts[parts.length - 1] // last is the index name
       }
       else if (parts.length === 2) {
         relation = parts[0]
@@ -392,7 +392,7 @@ function parseSqlServerOperator(line: string): { nodeType: string, relation?: st
     else {
       // Table Scan or other operations: [db].[schema].[table] or [table]
       if (parts.length >= 2) {
-        relation = parts.at(-1) // last part is the table name
+        relation = parts[parts.length - 1] // last part is the table name
       }
       else if (parts.length === 1) {
         relation = parts[0]
@@ -457,7 +457,7 @@ export function parseGenericText(text: string): ExplainPlanNode[] {
 
   const deduped: string[] = []
   for (const line of lines) {
-    if (deduped.length === 0 || line !== deduped.at(-1)) {
+    if (deduped.length === 0 || line !== deduped[deduped.length - 1]) {
       deduped.push(line)
     }
   }
@@ -636,14 +636,14 @@ export function parseMySqlAnalyzeText(text: string): ExplainPlanNode[] {
     }
 
     // Build tree from depth stack
-    while (stack.length > 0 && stack.at(-1).depth >= depth)
+    while (stack.length > 0 && stack[stack.length - 1].depth >= depth)
       stack.pop()
 
     if (stack.length === 0) {
       rootNodes.push(node)
     }
     else {
-      stack.at(-1).node.children.push(node)
+      stack[stack.length - 1].node.children.push(node)
     }
 
     stack.push({ node, depth })

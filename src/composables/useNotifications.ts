@@ -17,7 +17,7 @@ const DURATION_MS = 4000
 function add(type: ToastType, title: string, description?: string) {
   const id = ++nextId
   toasts.value = [...toasts.value, { id, type, title, description }]
-  setTimeout(dismiss, DURATION_MS, id)
+  setTimeout(() => dismiss(id), DURATION_MS)
 }
 
 function dismiss(id: number) {

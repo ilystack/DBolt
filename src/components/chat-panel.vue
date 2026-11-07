@@ -146,7 +146,7 @@ watch(
     const msgs = props.messages
     if (msgs.length === 0)
       return ''
-    const last = msgs.at(-1)
+    const last = msgs[msgs.length - 1]
     return `${last.content?.length ?? 0}:${(last as any).thinking?.length ?? 0}:${(last as any).toolCalls?.length ?? 0}`
   },
   () => scrollToBottomBatched(),

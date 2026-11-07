@@ -81,7 +81,7 @@ describe('historyStore', () => {
 
       store.addEntry(makeEntry({ sql: 'A', timestamp: 1 }))
       store.addEntry(makeEntry({ sql: 'B', timestamp: 2 }))
-      store.entries.at(-1).isFavorite = true // mark oldest ('A') as favorite
+      store.entries[store.entries.length - 1].isFavorite = true // mark oldest ('A') as favorite
 
       store.addEntry(makeEntry({ sql: 'C', timestamp: 3 }))
 
