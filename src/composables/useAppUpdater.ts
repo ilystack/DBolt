@@ -81,11 +81,11 @@ export function useAppUpdater() {
       console.warn('Failed to check for updates:', error)
       const msg = error instanceof Error ? error.message : String(error)
       if (
-        msg.includes('Cannot read properties of undefined') ||
-        msg.includes('invoke') ||
-        msg.includes('Could not fetch a valid release JSON') ||
-        msg.includes('release JSON') ||
-        msg.includes('404')
+        msg.includes('Cannot read properties of undefined')
+        || msg.includes('invoke')
+        || msg.includes('Could not fetch a valid release JSON')
+        || msg.includes('release JSON')
+        || msg.includes('404')
       ) {
         isUpToDate.value = true
         updateAvailable.value = false
