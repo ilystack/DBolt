@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import type { ComboboxOption } from '@/components/ui/combobox/types'
 import type { OracleConnectionOptions, ServerConnection } from '@/store'
 import type { DatabaseFileAssessment } from '@/utils/databaseFiles'
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { Check } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { shouldStripSshTunnel, UPGRADE_URL } from '@/common'
@@ -441,32 +443,168 @@ const dbTypeI18nKeyMap: Record<string, string> = {
   OCEANBASE_ORACLE: 'oceanbase-oracle', // lang keys use hyphens, enums use underscores
 }
 
-// Most-popular engines first in the type selector (MYSQL → PG → MSSQL → ORACLE
-// → SQLITE → DB2 → H2); the rest keep their enum order after the pinned ones.
-const PREFERRED_DB_TYPE_ORDER: Partial<Record<DatabaseType, number>> = {
-  [DatabaseType.MYSQL]: 0,
-  [DatabaseType.POSTGRESQL]: 1,
-  [DatabaseType.SQLSERVER]: 2,
-  [DatabaseType.ORACLE]: 3,
-  [DatabaseType.SQLITE]: 4,
-  [DatabaseType.DB2]: 5,
-  [DatabaseType.H2]: 6,
+type EngineCategoryKey = 'relational' | 'analytical' | 'cloudDw' | 'distributed' | 'timeseries' | 'enterprise'
+
+type EngineMeta = {
+  category: EngineCategoryKey
+  badge: string
+  keywords: string[]
+  rank?: number
 }
 
-const preferredTypeRank = (value: DatabaseType, index: number) =>
-  PREFERRED_DB_TYPE_ORDER[value] ?? 100 + index
+const DB_METADATA: Record<DatabaseType, EngineMeta> = {
+  // Relational (RDBMS)
+  [DatabaseType.POSTGRESQL]: { category: 'relational', badge: 'RDBMS', keywords: ['pg', 'postgres', 'psql', 'acid'], rank: 1 },
+  [DatabaseType.MYSQL]: { category: 'relational', badge: 'RDBMS', keywords: ['mysql', 'innodb'], rank: 2 },
+  [DatabaseType.MARIADB]: { category: 'relational', badge: 'RDBMS', keywords: ['mariadb', 'mysql', 'galera'], rank: 3 },
+  [DatabaseType.SQLITE]: { category: 'relational', badge: 'Embedded', keywords: ['sqlite', 'sqlite3', 'file', 'local'], rank: 4 },
+  [DatabaseType.SQLCIPHER]: { category: 'relational', badge: 'Embedded', keywords: ['sqlcipher', 'encrypted', 'sqlite'], rank: 5 },
+  [DatabaseType.SQLSERVER]: { category: 'relational', badge: 'RDBMS', keywords: ['mssql', 'sqlserver', 'microsoft', 'tsql'], rank: 6 },
+  [DatabaseType.ORACLE]: { category: 'relational', badge: 'Enterprise', keywords: ['oracle', 'plsql', 'tns', 'oci'], rank: 7 },
+  [DatabaseType.DB2]: { category: 'relational', badge: 'Enterprise', keywords: ['db2', 'ibm', 'mainframe'], rank: 8 },
+  [DatabaseType.H2]: { category: 'relational', badge: 'Embedded', keywords: ['h2', 'java', 'in-memory'], rank: 9 },
+  [DatabaseType.FIREBIRD]: { category: 'relational', badge: 'RDBMS', keywords: ['firebird', 'interbase'], rank: 10 },
+  [DatabaseType.DERBY]: { category: 'relational', badge: 'Embedded', keywords: ['derby', 'apache derby', 'cloudscape'], rank: 11 },
+  [DatabaseType.ACCESS]: { category: 'relational', badge: 'Desktop', keywords: ['access', 'ms access', 'accdb', 'mdb'], rank: 12 },
 
-const databaseTypeOptions = computed(() =>
-  Object.values(DatabaseType)
-    .map((value, index) => ({ value, index }))
-    .sort((a, b) => preferredTypeRank(a.value, a.index) - preferredTypeRank(b.value, b.index))
-    .map(({ value }) => {
+  // Analytical & Columnar (OLAP)
+  [DatabaseType.CLICKHOUSE]: { category: 'analytical', badge: 'OLAP', keywords: ['clickhouse', 'ch', 'columnar', 'analytics'], rank: 1 },
+  [DatabaseType.DUCKDB]: { category: 'analytical', badge: 'Embedded OLAP', keywords: ['duckdb', 'duck', 'parquet', 'analytics', 'in-memory'], rank: 2 },
+  [DatabaseType.DORIS]: { category: 'analytical', badge: 'OLAP', keywords: ['doris', 'apache doris', 'mpp'], rank: 3 },
+  [DatabaseType.SELECTDB]: { category: 'analytical', badge: 'OLAP', keywords: ['selectdb', 'cloud doris'], rank: 4 },
+  [DatabaseType.STARROCKS]: { category: 'analytical', badge: 'OLAP', keywords: ['starrocks', 'mpp', 'realtime'], rank: 5 },
+  [DatabaseType.DATABEND]: { category: 'analytical', badge: 'Lakehouse', keywords: ['databend', 'rust', 'lakehouse'], rank: 6 },
+  [DatabaseType.VERTICA]: { category: 'analytical', badge: 'Columnar', keywords: ['vertica', 'hpe', 'opentext'], rank: 7 },
+  [DatabaseType.EXASOL]: { category: 'analytical', badge: 'In-Memory', keywords: ['exasol', 'analytics'], rank: 8 },
+  [DatabaseType.KYLIN]: { category: 'analytical', badge: 'OLAP', keywords: ['kylin', 'apache kylin', 'cube'], rank: 9 },
+
+  // Cloud Data Warehouse & Lakehouse
+  [DatabaseType.SNOWFLAKE]: { category: 'cloudDw', badge: 'Cloud DW', keywords: ['snowflake', 'snow', 'cloud', 'warehouse'], rank: 1 },
+  [DatabaseType.BIGQUERY]: { category: 'cloudDw', badge: 'Cloud DW', keywords: ['bigquery', 'bq', 'google', 'gcp'], rank: 2 },
+  [DatabaseType.REDSHIFT]: { category: 'cloudDw', badge: 'Cloud DW', keywords: ['redshift', 'aws', 'amazon', 'dw'], rank: 3 },
+  [DatabaseType.DATABRICKS]: { category: 'cloudDw', badge: 'Lakehouse', keywords: ['databricks', 'spark', 'delta'], rank: 4 },
+  [DatabaseType.HIVE]: { category: 'cloudDw', badge: 'Data Lake', keywords: ['hive', 'apache hive', 'hadoop', 'metastore'], rank: 5 },
+  [DatabaseType.TRINO]: { category: 'cloudDw', badge: 'SQL Engine', keywords: ['trino', 'prestosql', 'federated'], rank: 6 },
+  [DatabaseType.PRESTO]: { category: 'cloudDw', badge: 'SQL Engine', keywords: ['presto', 'prestodb', 'facebook'], rank: 7 },
+
+  // Distributed & Edge SQL
+  [DatabaseType.TIDB]: { category: 'distributed', badge: 'NewSQL', keywords: ['tidb', 'pingcap', 'distributed', 'mysql', 'htap'], rank: 1 },
+  [DatabaseType.COCKROACHDB]: { category: 'distributed', badge: 'NewSQL', keywords: ['cockroach', 'cockroachdb', 'crdb', 'distributed', 'postgres'], rank: 2 },
+  [DatabaseType.YUGABYTEDB]: { category: 'distributed', badge: 'NewSQL', keywords: ['yugabyte', 'yugabytedb', 'distributed', 'postgres'], rank: 3 },
+  [DatabaseType.TURSO]: { category: 'distributed', badge: 'Edge SQL', keywords: ['turso', 'libsql', 'edge', 'sqlite', 'serverless'], rank: 4 },
+  [DatabaseType.ALLOYDB]: { category: 'distributed', badge: 'Cloud Native', keywords: ['alloydb', 'google', 'gcp', 'postgres'], rank: 5 },
+  [DatabaseType.CLOUDSQLPG]: { category: 'distributed', badge: 'Managed Cloud', keywords: ['cloudsql', 'google cloud sql', 'gcp', 'postgres'], rank: 6 },
+  [DatabaseType.CLOUDSQLMYSQL]: { category: 'distributed', badge: 'Managed Cloud', keywords: ['cloudsql', 'google cloud sql', 'gcp', 'mysql'], rank: 7 },
+  [DatabaseType.SINGLESTOREMEMSQL]: { category: 'distributed', badge: 'HTAP', keywords: ['singlestore', 'memsql', 'in-memory', 'realtime'], rank: 8 },
+  [DatabaseType.CRATEDB]: { category: 'distributed', badge: 'Distributed', keywords: ['cratedb', 'crate', 'postgres'], rank: 9 },
+  [DatabaseType.MATERIALIZE]: { category: 'distributed', badge: 'Streaming SQL', keywords: ['materialize', 'streaming', 'realtime', 'postgres'], rank: 10 },
+  [DatabaseType.RQLITE]: { category: 'distributed', badge: 'Distributed', keywords: ['rqlite', 'distributed sqlite', 'raft'], rank: 11 },
+
+  // Time-Series & Specialized
+  [DatabaseType.TIMESCALEDB]: { category: 'timeseries', badge: 'Time-Series', keywords: ['timescale', 'timescaledb', 'tsdb', 'iot', 'postgres'], rank: 1 },
+  [DatabaseType.QUESTDB]: { category: 'timeseries', badge: 'Time-Series', keywords: ['quest', 'questdb', 'tsdb', 'crypto', 'realtime'], rank: 2 },
+  [DatabaseType.TDENGINE]: { category: 'timeseries', badge: 'Time-Series', keywords: ['tdengine', 'iot', 'tsdb'], rank: 3 },
+  [DatabaseType.CASSANDRA]: { category: 'timeseries', badge: 'NoSQL', keywords: ['cassandra', 'apache cassandra', 'cql', 'wide-column'], rank: 4 },
+  [DatabaseType.IRIS]: { category: 'timeseries', badge: 'Multi-Model', keywords: ['iris', 'intersystems', 'healthcare'], rank: 5 },
+  [DatabaseType.MANTICORESEARCH]: { category: 'timeseries', badge: 'Search Engine', keywords: ['manticore', 'manticoresearch', 'sphinx', 'fulltext'], rank: 6 },
+
+  // Enterprise & Regional Systems
+  [DatabaseType.OCEANBASE]: { category: 'enterprise', badge: 'Distributed', keywords: ['oceanbase', 'alipay', 'ant', 'mysql mode'], rank: 1 },
+  [DatabaseType.OCEANBASE_ORACLE]: { category: 'enterprise', badge: 'Distributed', keywords: ['oceanbase', 'oracle mode'], rank: 2 },
+  [DatabaseType.DAMENG]: { category: 'enterprise', badge: 'Enterprise', keywords: ['dameng', 'dm8', 'china'], rank: 3 },
+  [DatabaseType.KINGBASEES]: { category: 'enterprise', badge: 'Enterprise', keywords: ['kingbase', 'kingbasees', 'kes', 'china'], rank: 4 },
+  [DatabaseType.OPENGAUSS]: { category: 'enterprise', badge: 'Enterprise', keywords: ['opengauss', 'huawei', 'china'], rank: 5 },
+  [DatabaseType.GAUSSDB]: { category: 'enterprise', badge: 'Enterprise', keywords: ['gaussdb', 'huawei', 'china'], rank: 6 },
+  [DatabaseType.HIGHGO]: { category: 'enterprise', badge: 'Enterprise', keywords: ['highgo', 'hgdb', 'china'], rank: 7 },
+  [DatabaseType.VASTBASE]: { category: 'enterprise', badge: 'Enterprise', keywords: ['vastbase', 'china'], rank: 8 },
+  [DatabaseType.GBASE8A]: { category: 'enterprise', badge: 'Enterprise', keywords: ['gbase', 'gbase8a', 'china'], rank: 9 },
+  [DatabaseType.GBASE8C]: { category: 'enterprise', badge: 'Enterprise', keywords: ['gbase', 'gbase8c', 'china'], rank: 10 },
+  [DatabaseType.TDSQL]: { category: 'enterprise', badge: 'Enterprise', keywords: ['tdsql', 'tencent', 'china'], rank: 11 },
+  [DatabaseType.POLARDB]: { category: 'enterprise', badge: 'Enterprise', keywords: ['polardb', 'alibaba', 'aliyun', 'china'], rank: 12 },
+  [DatabaseType.GOLDENDB]: { category: 'enterprise', badge: 'Enterprise', keywords: ['goldendb', 'zte', 'china'], rank: 13 },
+  [DatabaseType.YASHANDB]: { category: 'enterprise', badge: 'Enterprise', keywords: ['yashan', 'yashandb', 'china'], rank: 14 },
+  [DatabaseType.UXDB]: { category: 'enterprise', badge: 'Enterprise', keywords: ['uxdb', 'china'], rank: 15 },
+  [DatabaseType.XUGUDB]: { category: 'enterprise', badge: 'Enterprise', keywords: ['xugu', 'xugudb', 'china'], rank: 16 },
+  [DatabaseType.HANA]: { category: 'enterprise', badge: 'ERP / In-Memory', keywords: ['hana', 'sap', 'sap hana', 'erp'], rank: 17 },
+  [DatabaseType.TERADATA]: { category: 'enterprise', badge: 'Enterprise DW', keywords: ['teradata', 'dw'], rank: 18 },
+  [DatabaseType.INFORMIX]: { category: 'enterprise', badge: 'Enterprise', keywords: ['informix', 'ibm'], rank: 19 },
+  [DatabaseType.GREENPLUM]: { category: 'enterprise', badge: 'MPP DW', keywords: ['greenplum', 'pivotal', 'vmware', 'mpp'], rank: 20 },
+  [DatabaseType.ENTERPRISEDB]: { category: 'enterprise', badge: 'Postgres Advanced', keywords: ['enterprisedb', 'edb', 'postgres'], rank: 21 },
+  [DatabaseType.FUJITSUPG]: { category: 'enterprise', badge: 'Enterprise', keywords: ['fujitsu', 'fujitsupg', 'japan'], rank: 22 },
+}
+
+const CATEGORY_ORDER: EngineCategoryKey[] = [
+  'relational',
+  'analytical',
+  'cloudDw',
+  'distributed',
+  'timeseries',
+  'enterprise',
+]
+
+const POPULAR_ENGINES: DatabaseType[] = [
+  DatabaseType.POSTGRESQL,
+  DatabaseType.MYSQL,
+  DatabaseType.SQLITE,
+  DatabaseType.DUCKDB,
+  DatabaseType.CLICKHOUSE,
+  DatabaseType.SQLSERVER,
+  DatabaseType.ORACLE,
+  DatabaseType.SNOWFLAKE,
+]
+
+const popularEngines = computed(() =>
+  POPULAR_ENGINES.map((type) => {
+    const i18nKey = dbTypeI18nKeyMap[type] || type.toLowerCase()
+    const fullKey = `components.serverForm.databaseTypes.${i18nKey}`
+    const label = t(fullKey)
+    return {
+      type,
+      label: label === fullKey ? type : label,
+    }
+  }),
+)
+
+const databaseTypeOptions = computed<ComboboxOption[]>(() => {
+  const options: ComboboxOption[] = []
+  for (const catKey of CATEGORY_ORDER) {
+    const groupName = t(`components.serverForm.databaseCategories.${catKey}`)
+    const engines = (Object.keys(DB_METADATA) as DatabaseType[])
+      .filter(type => DB_METADATA[type]?.category === catKey)
+      .sort((a, b) => (DB_METADATA[a]?.rank ?? 99) - (DB_METADATA[b]?.rank ?? 99))
+
+    for (const value of engines) {
+      const meta = DB_METADATA[value]
       const i18nKey = dbTypeI18nKeyMap[value] || value.toLowerCase()
       const fullKey = `components.serverForm.databaseTypes.${i18nKey}`
       const label = t(fullKey)
-      return { label: label === fullKey ? value : label, value }
-    }),
-)
+      options.push({
+        label: label === fullKey ? value : label,
+        value,
+        group: groupName,
+        keywords: meta?.keywords,
+        badge: meta?.badge,
+      })
+    }
+  }
+
+  const unassignedEngines = Object.values(DatabaseType).filter(type => !DB_METADATA[type])
+  if (unassignedEngines.length > 0) {
+    const fallbackGroup = t('components.serverForm.labels.allDatabases')
+    for (const value of unassignedEngines) {
+      const i18nKey = dbTypeI18nKeyMap[value] || value.toLowerCase()
+      const fullKey = `components.serverForm.databaseTypes.${i18nKey}`
+      const label = t(fullKey)
+      options.push({
+        label: label === fullKey ? value : label,
+        value,
+        group: fallbackGroup,
+      })
+    }
+  }
+
+  return options
+})
 
 // ── Oracle-specific state ──
 const isOracle = computed(() => formData.value.type === DatabaseType.ORACLE)
@@ -949,35 +1087,93 @@ function handleSave() {
             </div>
 
             <!-- Database Type -->
-            <div class="space-y-2">
-              <Label for="type">{{ t('components.serverForm.labels.databaseType') }}</Label>
-              <SearchableSelect
-                :model-value="formData.type"
-                :options="databaseTypeOptions"
-                :search-threshold="5"
-                :placeholder="t('components.serverForm.placeholders.selectType')"
-                class="w-full"
-                @update:model-value="handleDatabaseTypeChange"
-              >
-                <template #selected-prepend>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <Label for="type" class="text-xs text-foreground font-medium">
+                  {{ t('components.serverForm.labels.databaseType') }}
+                </Label>
+                <span class="text-[11px] text-muted-foreground">
+                  {{ t('components.serverForm.labels.popularDatabases') }}
+                </span>
+              </div>
+
+              <!-- Quick Pick: Popular Databases Grid -->
+              <div class="gap-2 grid grid-cols-2 sm:grid-cols-4">
+                <button
+                  v-for="item in popularEngines"
+                  :key="item.type"
+                  type="button"
+                  :aria-pressed="formData.type === item.type"
+                  class="group text-xs font-medium px-2.5 py-2 text-left border rounded-lg flex gap-2 transition-colors items-center relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  :class="[
+                    formData.type === item.type
+                      ? 'border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/30 font-medium'
+                      : 'border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:bg-accent/60 hover:text-foreground',
+                  ]"
+                  @click="handleDatabaseTypeChange(item.type)"
+                >
                   <img
-                    v-if="formData.type"
-                    :src="getDatabaseIcon(formData.type as DatabaseType)"
+                    :src="getDatabaseIcon(item.type)"
                     alt=""
-                    class="mr-2 h-5 w-5 object-contain"
+                    class="shrink-0 h-4 w-4 object-contain"
                   >
-                </template>
-                <template #option="{ option }">
-                  <div class="flex gap-2 items-center">
+                  <span class="flex-1 truncate">{{ item.label }}</span>
+                  <span
+                    v-if="formData.type === item.type"
+                    class="rounded-full bg-primary shrink-0 h-1.5 w-1.5"
+                  />
+                </button>
+              </div>
+
+              <!-- Categorized Searchable Selector -->
+              <div class="pt-1 space-y-1.5">
+                <div class="flex gap-2 items-center">
+                  <span class="text-[11px] text-muted-foreground font-medium">{{ t('components.serverForm.labels.allDatabases') }}</span>
+                  <div class="bg-border/40 flex-1 h-px" />
+                </div>
+                <SearchableSelect
+                  :model-value="formData.type"
+                  :options="databaseTypeOptions"
+                  :search-threshold="0"
+                  :placeholder="t('components.serverForm.placeholders.selectType')"
+                  :search-placeholder="t('components.serverForm.placeholders.searchDatabase')"
+                  class="w-full"
+                  @update:model-value="handleDatabaseTypeChange"
+                >
+                  <template #selected-prepend>
                     <img
-                      :src="getDatabaseIcon(option.value as DatabaseType)"
+                      v-if="formData.type"
+                      :src="getDatabaseIcon(formData.type as DatabaseType)"
                       alt=""
-                      class="h-5 w-5 object-contain"
+                      class="mr-2 shrink-0 h-4 w-4 object-contain"
                     >
-                    {{ option.label }}
-                  </div>
-                </template>
-              </SearchableSelect>
+                  </template>
+                  <template #option="{ option }">
+                    <div class="py-0.5 flex w-full items-center justify-between">
+                      <div class="flex gap-2.5 min-w-0 items-center">
+                        <img
+                          :src="getDatabaseIcon(option.value as DatabaseType)"
+                          alt=""
+                          class="shrink-0 h-4 w-4 object-contain"
+                        >
+                        <span class="text-xs font-medium truncate">{{ option.label }}</span>
+                      </div>
+                      <div class="ml-2 flex shrink-0 gap-2 items-center">
+                        <span
+                          v-if="option.badge"
+                          class="text-[10px] text-muted-foreground/80 tracking-wide font-medium px-1.5 py-0.5 border border-border/40 rounded bg-muted/60 uppercase"
+                        >
+                          {{ option.badge }}
+                        </span>
+                        <Check
+                          v-if="option.value === formData.type"
+                          class="text-primary shrink-0 h-3.5 w-3.5"
+                        />
+                      </div>
+                    </div>
+                  </template>
+                </SearchableSelect>
+              </div>
             </div>
 
             <!-- Host and Port on same row; Database below (non-Oracle, non-file-based) -->
@@ -1213,7 +1409,7 @@ function handleSave() {
                           class="pr-8"
                         />
                         <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="togglePassword('wallet')">
-                          <span class="i-carbon-view h-4 w-4 block" />
+                          <span :class="showPasswords.wallet ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
                         </button>
                       </div>
                     </div>
@@ -1448,7 +1644,7 @@ function handleSave() {
                   class="pr-8"
                 />
                 <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="togglePassword('db')">
-                  <span class="i-carbon-view h-4 w-4 block" />
+                  <span :class="showPasswords.db ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
                 </button>
               </div>
             </div>
@@ -1474,7 +1670,7 @@ function handleSave() {
                     class="pr-8"
                   />
                   <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="togglePassword('db')">
-                    <span class="i-carbon-view h-4 w-4 block" />
+                    <span :class="showPasswords.db ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
                   </button>
                 </div>
               </div>

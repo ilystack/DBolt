@@ -80,8 +80,20 @@ export function useAppUpdater() {
     catch (error) {
       console.warn('Failed to check for updates:', error)
       const msg = error instanceof Error ? error.message : String(error)
-      if (msg.includes('Cannot read properties of undefined') || msg.includes('invoke')) {
+      if (
+        msg.includes('Cannot read properties of undefined') ||
+        msg.includes('invoke') ||
+        msg.includes('Could not fetch a valid release JSON') ||
+        msg.includes('release JSON') ||
+        msg.includes('404')
+      ) {
         isUpToDate.value = true
+        updateAvailable.value = false
+        updateInfo.value = null
+        updateError.value = ''
+        if (showToast) {
+          toast.success(t('updater.upToDate'))
+        }
         return null
       }
       updateError.value = msg

@@ -3,4 +3,7 @@ export type ComboboxOption = {
   value: string
   disabled?: boolean
   group?: string
+  keywords?: string[]
+  badge?: string
+  description?: string
 }

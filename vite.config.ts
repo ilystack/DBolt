@@ -21,6 +21,18 @@ export default defineConfig({
   //
   // 1. prevent vite from obscuring rust errors
   clearScreen: false,
+  build: {
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules/monaco-editor')) {
+            return 'monaco-editor'
+          }
+        },
+      },
+    },
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1521,

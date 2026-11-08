@@ -1120,7 +1120,7 @@ function closeResultPanel() {
       <div class="flex flex-1 overflow-hidden">
         <!-- Sidebar -->
         <div
-          class="border-r bg-chrome flex flex-col"
+          class="border-r border-border/50 bg-card/60 flex flex-col"
           :style="{ width: `${sidebarWidth}px` }"
         >
           <!-- Connection selector with status indicator -->

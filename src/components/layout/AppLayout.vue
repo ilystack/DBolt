@@ -7,6 +7,7 @@ import TaskSidebar from './TaskSidebar.vue'
 
 const props = defineProps<{
   hideAiButton?: boolean
+  plain?: boolean
 }>()
 
 type SidePanel = 'none' | 'ai' | 'tasks'
@@ -23,27 +24,37 @@ function toggleTaskManager() {
 </script>
 
 <template>
-  <div class="flex flex-col h-screen overflow-hidden">
+  <div class="bg-background flex flex-col h-screen overflow-hidden">
     <AppHeader
       :hide-ai-button="props.hideAiButton ?? false"
       @toggle-ai="toggleAi"
       @toggle-task-manager="toggleTaskManager"
     />
-    <div class="flex flex-1 min-h-0">
+    <div class="px-2 pb-2 pt-0 bg-background flex flex-1 gap-2 min-h-0 overflow-hidden">
       <AppSidebar />
-      <main class="flex flex-1 min-w-0 overflow-hidden">
-        <div class="flex-1 overflow-auto">
+      <main
+        v-if="props.plain"
+        class="flex flex-1 flex-col gap-2 min-w-0 relative overflow-hidden"
+      >
+        <slot />
+      </main>
+      <main
+        v-else
+        class="border border-border/70 rounded-xl bg-card/40 flex flex-1 min-w-0 shadow-sm relative overflow-hidden"
+      >
+        <div class="flex-1 h-full w-full overflow-auto">
           <slot />
         </div>
-        <AiAssistantSidebar
-          v-if="sidePanel === 'ai'"
-          @close="sidePanel = 'none'"
-        />
-        <TaskSidebar
-          v-if="sidePanel === 'tasks'"
-          @close="sidePanel = 'none'"
-        />
       </main>
+
+      <AiAssistantSidebar
+        v-if="sidePanel === 'ai'"
+        @close="sidePanel = 'none'"
+      />
+      <TaskSidebar
+        v-if="sidePanel === 'tasks'"
+        @close="sidePanel = 'none'"
+      />
     </div>
   </div>
 </template>

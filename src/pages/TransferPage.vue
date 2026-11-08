@@ -32,12 +32,11 @@ const tabConfig = computed(() => [
       <!-- Header -->
       <header class="px-6 py-3 border-b border-border/40 flex shrink-0 items-center justify-between">
         <div class="flex gap-3 items-center">
-          <h1 class="text-xl tracking-tight font-semibold">
+          <h1 class="text-xl font-semibold">
             {{ t('transfer.title') }}
           </h1>
-          <p class="text-caption text-muted-foreground">
-            {{ t('transfer.subtitle') }}
-          </p>
+          <span class="text-muted-foreground">|</span>
+          <span class="text-sm text-muted-foreground">{{ t('transfer.subtitle') }}</span>
         </div>
         <TaskManagerButton @click="showTaskManager = true" />
       </header>

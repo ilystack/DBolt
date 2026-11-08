@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { LlmProvider } from '@/store/appStore'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { EyeOff, Lock, Server, ShieldCheck } from 'lucide-vue-next'
+
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -126,64 +126,6 @@ function handleCloseDialog() {
         @add="handleAdd"
         @edit="handleEdit"
       />
-
-      <!-- Zero Data Leak Privacy Architecture -->
-      <section v-if="settingsLoaded" class="space-y-3">
-        <div class="p-4 border rounded-xl bg-card/60 space-y-3">
-          <div class="flex gap-4 items-center justify-between">
-            <div class="flex gap-2.5 items-center">
-              <div class="text-emerald-500 rounded-lg bg-emerald-500/15 flex shrink-0 h-9 w-9 items-center justify-center">
-                <ShieldCheck class="h-5 w-5" />
-              </div>
-              <div>
-                <div class="flex gap-2 items-center">
-                  <h3 class="text-sm text-foreground font-semibold">
-                    Zero Data Leak Architecture
-                  </h3>
-                  <span class="text-[10px] text-emerald-600 tracking-wider font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 uppercase dark:text-emerald-400">
-                    Always Active
-                  </span>
-                </div>
-                <p class="text-xs text-muted-foreground mt-0.5">
-                  DBolt is strictly engineered so your database records never leave your workstation.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="pt-1 gap-3 grid grid-cols-1 md:grid-cols-3">
-            <div class="p-3 border rounded-lg bg-muted/20 space-y-1">
-              <div class="text-xs text-foreground font-medium flex gap-1.5 items-center">
-                <EyeOff class="text-emerald-500 shrink-0 h-3.5 w-3.5" />
-                <span>Schema-Only Context</span>
-              </div>
-              <p class="text-[11px] text-muted-foreground leading-normal">
-                Only table names, column types, and foreign key relations are shared for query generation. Table rows and cell values are never sent.
-              </p>
-            </div>
-
-            <div class="p-3 border rounded-lg bg-muted/20 space-y-1">
-              <div class="text-xs text-foreground font-medium flex gap-1.5 items-center">
-                <Server class="text-emerald-500 shrink-0 h-3.5 w-3.5" />
-                <span>Air-Gapped Local Ollama</span>
-              </div>
-              <p class="text-[11px] text-muted-foreground leading-normal">
-                Configure Ollama or LM Studio on localhost. Zero bytes of schema or code ever traverse the internet.
-              </p>
-            </div>
-
-            <div class="p-3 border rounded-lg bg-muted/20 space-y-1">
-              <div class="text-xs text-foreground font-medium flex gap-1.5 items-center">
-                <Lock class="text-emerald-500 shrink-0 h-3.5 w-3.5" />
-                <span>Direct Client-to-API</span>
-              </div>
-              <p class="text-[11px] text-muted-foreground leading-normal">
-                Cloud LLM requests (OpenAI/Claude/DeepSeek) connect directly from your machine over encrypted HTTPS. No intermediate proxy servers.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <SettingsFeedback v-bind="chatFeedback" />
       <Button v-if="!settingsLoaded && chatFeedback.state === 'error'" variant="outline" size="sm" @click="loadSettings">

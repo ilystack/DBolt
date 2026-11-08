@@ -170,7 +170,7 @@ async function save() {
                 <div class="relative">
                   <Input id="profile-password" v-model="form.password" :type="showSecrets ? 'text' : 'password'" autocomplete="off" class="pr-8" />
                   <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="showSecrets = !showSecrets">
-                    <span class="i-carbon-view h-4 w-4 block" />
+                    <span :class="showSecrets ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
                   </button>
                 </div>
               </TabsContent>
@@ -192,7 +192,7 @@ async function save() {
                   <div class="relative">
                     <Input id="profile-passphrase" v-model="form.keyPassphrase" :type="showSecrets ? 'text' : 'password'" autocomplete="off" class="pr-8" />
                     <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="showSecrets = !showSecrets">
-                      <span class="i-carbon-view h-4 w-4 block" />
+                      <span :class="showSecrets ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
                     </button>
                   </div>
                 </div>

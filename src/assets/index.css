@@ -48,48 +48,48 @@
 
 .dark {
   color-scheme: dark;
-  --background: 220.00 12.00% 9.80%;
-  --foreground: 217.50 17.39% 90.98%;
-  --card: 220.00 11.39% 15.49%;
-  --card-foreground: 217.50 17.39% 90.98%;
-  --popover: 220.00 11.39% 15.49%;
-  --popover-foreground: 217.50 17.39% 90.98%;
+  --background: 0 0% 5%;
+  --foreground: 0 0% 95%;
+  --card: 0 0% 8.5%;
+  --card-foreground: 0 0% 95%;
+  --popover: 0 0% 9%;
+  --popover-foreground: 0 0% 95%;
   --primary: 221.21 83.19% 53.33%;
-  --primary-foreground: 0.00 0.00% 100.00%;
-  --secondary: 220.00 11.39% 15.49%;
-  --secondary-foreground: 217.50 17.39% 90.98%;
-  --muted: 220.00 11.39% 15.49%;
-  --muted-foreground: 217.89 11.80% 68.43%;
-  --accent: 216.92 13.13% 19.41%;
-  --accent-foreground: 217.50 17.39% 90.98%;
-  --destructive: 0.00 53.53% 47.25%;
-  --destructive-foreground: 0.00 0.00% 100.00%;
-  --success: 143.02 47.25% 64.31%;
-  --success-foreground: 220.00 12.00% 9.80%;
-  --success-muted: 148.42 22.89% 16.27%;
-  --success-border: 141.67 23.08% 30.59%;
-  --border: 217.50 13.33% 23.53%;
-  --input: 215.56 11.79% 44.90%;
-  --ring: 217.89 11.80% 68.43%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 95%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 64%;
+  --accent: 0 0% 14%;
+  --accent-foreground: 0 0% 95%;
+  --destructive: 0 65% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 143 55% 58%;
+  --success-foreground: 0 0% 5%;
+  --success-muted: 144 30% 12%;
+  --success-border: 144 30% 22%;
+  --border: 0 0% 16%;
+  --input: 0 0% 20%;
+  --ring: 0 0% 70%;
   --chart-1: 220 70% 50%;
   --chart-2: 160 60% 45%;
   --chart-3: 30 80% 55%;
   --chart-4: 280 65% 60%;
   --chart-5: 340 75% 55%;
-  --chrome: 217.50 12.50% 12.55%;
-  --primary-text: 218.46 100.00% 77.06%;
-  --selection: 215.71 35.59% 23.14%;
-  --destructive-text: 4.82 81.16% 72.94%;
-  --destructive-muted: 352.94 19.10% 17.45%;
-  --destructive-border: 3.40 29.61% 35.10%;
-  --warning: 36.61 79.73% 70.98%;
-  --warning-foreground: 220.00 12.00% 9.80%;
-  --warning-muted: 36.67 20.45% 17.25%;
-  --warning-border: 37.36 32.12% 32.35%;
-  --syntax-keyword: 218.46 100.00% 77.06%;
-  --syntax-string: 26.40 47.77% 69.22%;
-  --syntax-number: 264.49 51.58% 81.37%;
-  --syntax-comment: 112.50 7.55% 58.43%;
+  --chrome: 0 0% 5.5%;
+  --primary-text: 218 100% 77%;
+  --selection: 0 0% 20%;
+  --destructive-text: 0 85% 72%;
+  --destructive-muted: 0 30% 13%;
+  --destructive-border: 0 35% 22%;
+  --warning: 38 85% 65%;
+  --warning-foreground: 0 0% 5%;
+  --warning-muted: 38 30% 13%;
+  --warning-border: 38 35% 22%;
+  --syntax-keyword: 218 100% 77%;
+  --syntax-string: 26 50% 68%;
+  --syntax-number: 265 52% 80%;
+  --syntax-comment: 0 0% 50%;
 }
 
 :root {
@@ -175,4 +175,27 @@ button:not(:disabled),
 ::selection {
   background-color: hsl(var(--selection));
   color: hsl(var(--foreground));
+}
+
+/* Hide duplicate Edge/Webview2 password reveal button */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+}
+
+/* Accessibility: Consistent focus-visible ring across interactive controls */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Accessibility: Prefers Reduced Motion - preserve state/feedback while eliminating jarring motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.05s !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -3,9 +3,10 @@
   Uses subtle primary outlines and monospaced format badges on hover/drag.
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { getCurrentInstance, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 
 const props = defineProps<{
@@ -14,9 +15,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   fileSelected: [file: File]
+  browse: []
 }>()
 
 const { t } = useI18n()
+const instance = getCurrentInstance()
 
 const isDragging = ref(false)
 
@@ -28,9 +31,9 @@ function triggerFileInput() {
   fileInputRef.value?.click()
 }
 
-function handleKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault()
+function handleBrowseClick() {
+  emit('browse')
+  if (!instance?.vnode.props?.onBrowse) {
     triggerFileInput()
   }
 }
@@ -64,31 +67,20 @@ function handleFileInput(e: Event) {
 
 <template>
   <Card
-    class="rounded-md border-dashed cursor-pointer transition-all duration-200 focus-visible:outline-none hover:bg-muted/30 focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-1"
-    :class="isDragging ? 'border-primary/60 bg-primary/[0.04]' : 'border-border/60'"
-    role="button"
-    tabindex="0"
-    aria-label="Drop a file or click to browse"
+    class="rounded-md border-dashed transition-all duration-200"
+    :class="isDragging ? 'border-primary/60 bg-primary/[0.04]' : 'border-border/60 bg-muted/10'"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
-    @click="triggerFileInput"
-    @keydown="handleKeyDown"
   >
-    <CardContent class="p-4 text-center flex flex-col min-h-[120px] items-center justify-center">
-      <div
-        class="text-primary-text mb-2.5 rounded-full bg-primary/5 flex h-9 w-9 items-center justify-center"
-        aria-hidden="true"
-      >
-        <span class="i-carbon-document-upload h-4.5 w-4.5" />
-      </div>
+    <CardContent class="p-5 text-center flex flex-col min-h-[120px] items-center justify-center">
       <h3 class="text-sm text-foreground tracking-tight font-medium">
         {{ t('transfer.import.dropzone.title') }}
       </h3>
       <p class="text-caption text-muted-foreground mt-0.5">
         {{ t('transfer.import.dropzone.instruction') }}
       </p>
-      <div class="mt-3 flex flex-wrap gap-1.5 justify-center">
+      <div class="mt-2.5 flex flex-wrap gap-1.5 justify-center">
         <span
           v-for="f in formats"
           :key="f"
@@ -96,6 +88,18 @@ function handleFileInput(e: Event) {
         >
           {{ f }}
         </span>
+      </div>
+      <div class="mt-3 flex justify-center">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          class="text-xs px-3 gap-1.5 h-7"
+          @click="handleBrowseClick"
+        >
+          <span class="i-carbon-folder-open h-3.5 w-3.5" />
+          {{ t('transfer.import.browseFiles') }}
+        </Button>
       </div>
       <input
         ref="fileInputRef"

@@ -49,14 +49,14 @@ watch(open, (value) => {
 
 const triggerClasses = computed(() =>
   props.compact
-    ? 'h-7 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 min-w-0 inline-flex items-center justify-center cursor-pointer transition-colors focus-visible:outline-none model-picker-trigger'
-    : 'h-8 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 min-w-0 inline-flex items-center justify-center cursor-pointer transition-colors focus-visible:outline-none model-picker-trigger',
+    ? 'h-7 rounded-md px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 min-w-0 inline-flex items-center justify-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 model-picker-trigger'
+    : 'h-8 rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 min-w-0 inline-flex items-center justify-center cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 model-picker-trigger',
 )
 
 const panelClasses = computed(() =>
   props.compact
-    ? 'w-[280px] p-0 bg-popover text-foreground border-border'
-    : 'w-[360px] p-0 bg-popover text-popover-foreground border-border',
+    ? 'w-[260px] p-0 bg-popover text-foreground border border-border shadow-md rounded-xl overflow-hidden'
+    : 'w-[280px] p-0 bg-popover text-popover-foreground border border-border shadow-md rounded-xl overflow-hidden',
 )
 
 const flattenedModels = computed(() => props.groups.flatMap(group => group.models))
@@ -92,20 +92,13 @@ function selectModel(value: string) {
     <PopoverTrigger as-child>
       <button :class="triggerClasses">
         <span class="text-left truncate">{{ selectedLabel }}</span>
-        <span class="i-carbon-chevron-down ml-1 opacity-70 shrink-0 h-3 w-3" />
+        <span class="i-carbon-chevron-down text-muted-foreground ml-1 shrink-0 h-3 w-3" />
       </button>
     </PopoverTrigger>
-    <PopoverContent align="end" :class="panelClasses">
+    <PopoverContent align="start" side="top" :side-offset="6" :collision-padding="8" :class="panelClasses">
       <div class="model-picker-panel">
         <div class="model-picker-header">
-          <div>
-            <p class="model-picker-title">
-              {{ title }}
-            </p>
-            <p class="model-picker-subtitle">
-              esc
-            </p>
-          </div>
+          <span class="model-picker-title">{{ title }}</span>
         </div>
 
         <div class="model-picker-list">
@@ -174,21 +167,17 @@ function selectModel(value: string) {
 
 .model-picker-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: 14px 14px 8px;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .model-picker-title {
-  font-size: var(--font-size-form);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
-
-.model-picker-subtitle {
-  margin-top: 2px;
-  font-size: var(--font-size-caption);
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: hsl(var(--muted-foreground));
 }
 
@@ -218,6 +207,11 @@ function selectModel(value: string) {
   padding: 6px 8px;
   text-align: left;
   color: hsl(var(--foreground));
+}
+
+.model-picker-row:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: -1px;
 }
 
 .model-picker-row:hover {

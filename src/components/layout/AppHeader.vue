@@ -32,7 +32,7 @@ const trafficLightInset = computed(() => {
 
 <template>
   <div
-    class="border-b bg-chrome flex shrink-0 gap-1 h-10 items-center overflow-hidden"
+    class="bg-background/80 flex shrink-0 gap-1 h-10 items-center overflow-hidden backdrop-blur-md"
     :style="{ paddingLeft: trafficLightInset }"
     :class="[
       isMac ? '' : 'flex-row-reverse',
@@ -40,9 +40,11 @@ const trafficLightInset = computed(() => {
     data-tauri-drag-region
   >
     <WindowControls />
-    <div class="px-2 flex flex-1 h-full w-0 items-center">
-      <span class="text-xs text-muted-foreground font-semibold select-none">DBolt</span>
-      <div class="flex-1" data-tauri-drag-region />
+    <div class="flex flex-1 h-full w-0 items-center">
+      <div class="ml-2 flex shrink-0 h-full w-14 select-none items-center justify-center" data-tauri-drag-region>
+        <span class="text-xs text-muted-foreground tracking-tight font-semibold">DBolt</span>
+      </div>
+      <div class="flex-1 h-full" data-tauri-drag-region />
       <TooltipProvider>
         <Tooltip v-if="!hideAiButton">
           <TooltipTrigger as-child>

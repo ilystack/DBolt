@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { openUrl } from '@tauri-apps/plugin-opener'
-import { Bot } from 'lucide-vue-next'
+import { ArrowUpDown, Bot, FileCode2, Settings } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink, useRoute } from 'vue-router'
@@ -16,8 +15,9 @@ const menuItems = [
   // free page — only the ER-diagram action inside it is Ultimate-gated
   { id: 'queries', label: 'Queries', icon: 'code', path: '/queries' },
   { id: 'data-studio', label: 'Data Studio', icon: 'smart_toy', path: '/data-studio', gated: false },
+  { id: 'transfer', label: 'Data Transfer', icon: 'transfer', path: '/transfer' },
+  { id: 'snippets', label: 'Snippets', icon: 'snippets', path: '/snippets' },
   { id: 'history', label: 'History', icon: 'history', path: '/history' },
-  { id: 'github', label: 'GitHub', icon: 'github', path: '' },
 ]
 
 const isActive = (path: string) => route.path === path
@@ -25,14 +25,14 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <aside class="border-r bg-chrome flex flex-shrink-0 flex-col h-full w-14 z-50">
-    <!-- User identity (was the logo; the app mark moved to the title bar) -->
-    <div class="border-b flex h-12 items-center justify-center">
+  <aside class="border border-border/80 rounded-xl bg-card/95 flex flex-shrink-0 flex-col h-full w-14 select-none shadow-[0_2px_8px_rgba(0,0,0,0.04)] transition-all duration-200 z-50 overflow-hidden backdrop-blur-md dark:border-border/80 dark:bg-card/85 dark:shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
+    <!-- User identity (app icon mark) -->
+    <div class="mx-2 border-b border-border/40 flex shrink-0 h-12 items-center justify-center">
       <UserMenu />
     </div>
 
     <!-- Navigation -->
-    <nav class="px-1.5 py-3 flex-1 overflow-y-auto space-y-1.5">
+    <nav class="px-2 py-3 flex flex-1 flex-col items-center overflow-y-auto space-y-2">
       <TooltipProvider>
         <RouterLink
           v-for="item in menuItems"
@@ -44,15 +44,14 @@ const { t } = useI18n()
           <Tooltip>
             <TooltipTrigger as-child>
               <button
-                class="mx-auto rounded-md flex h-9 w-9 cursor-pointer transition-colors items-center justify-center relative" :class="[
-                  item.id === 'github'
-                    ? 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                    : isActive(item.path)
-                      ? 'bg-secondary text-primary-text border border-border shadow-sm'
-                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                class="mx-auto rounded-lg flex h-9 w-9 cursor-pointer transition-colors duration-150 items-center justify-center relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                :class="[
+                  isActive(item.path)
+                    ? 'bg-primary/10 text-primary-text border border-primary/20 shadow-xs font-medium'
+                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
                 ]"
                 :aria-label="item.label"
-                @click="item.id === 'github' ? openUrl('https://github.com/ilystack/DBolt') : navigate()"
+                @click="navigate"
               >
                 <ProBadge
                   v-if="showProDots && item.gated"
@@ -77,23 +76,11 @@ const { t } = useI18n()
                   <path d="M3 12a9 3 0 0 0 18 0" />
                 </svg>
 
-                <!-- Import/Export icon -->
-                <svg
-                  v-if="item.icon === 'import_export'"
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M12 3v18" />
-                  <path d="m8 7 4-4 4 4" />
-                  <path d="m16 17-4 4-4-4" />
-                </svg>
+                <!-- Transfer icon (ArrowUpDown from lucide) -->
+                <ArrowUpDown
+                  v-if="item.icon === 'transfer'"
+                  class="h-5 w-5"
+                />
 
                 <!-- Smart Toy / AI icon (Bot from lucide) -->
                 <Bot
@@ -135,8 +122,12 @@ const { t } = useI18n()
                   <polyline points="12 6 12 12 16 14" />
                 </svg>
 
-                <!-- GitHub icon -->
-                <span v-if="item.icon === 'github'" class="i-lucide-github h-5 w-5" />
+                <!-- Snippets icon (FileCode2 from lucide) -->
+                <FileCode2
+                  v-if="item.icon === 'snippets'"
+                  class="h-5 w-5"
+                />
+
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
@@ -148,36 +139,22 @@ const { t } = useI18n()
     </nav>
 
     <!-- Bottom actions -->
-    <div class="px-2 py-3 border-t space-y-2">
+    <div class="px-2 py-2.5 border-t border-border/40 flex shrink-0 flex-col w-full items-center">
       <TooltipProvider>
         <RouterLink to="/settings" custom #="{ navigate }">
           <Tooltip>
             <TooltipTrigger as-child>
               <button
-                class="mx-auto rounded-md flex h-9 w-9 cursor-pointer transition-colors items-center justify-center" :class="[
+                class="rounded-lg flex h-9 w-9 cursor-pointer transition-colors duration-150 items-center justify-center relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                :class="[
                   isActive('/settings')
-                    ? 'bg-secondary text-primary-text border border-border shadow-sm'
-                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                    ? 'bg-primary/10 text-primary-text border border-primary/20 shadow-xs font-medium'
+                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
                 ]"
                 :aria-label="t('common.settings')"
                 @click="navigate"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path
-                    d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-                  />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
+                <Settings class="h-5 w-5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">

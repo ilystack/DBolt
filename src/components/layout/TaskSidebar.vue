@@ -124,9 +124,12 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border) / 0.7);
+  border-radius: 12px;
   position: relative;
-  background: hsl(var(--background));
+  background: hsl(var(--card) / 0.4);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  overflow: hidden;
 }
 
 .resize-handle {
@@ -150,7 +153,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 12px 12px 16px;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border) / 0.4);
 }
 
 .header-title {

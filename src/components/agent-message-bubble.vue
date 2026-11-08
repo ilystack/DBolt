@@ -841,7 +841,7 @@ details[open] .activity-chevron {
   height: 5px;
   border-radius: 50%;
   background: hsl(var(--muted-foreground));
-  animation: typing-bounce 1.4s infinite ease-in-out both;
+  animation: typing-pulse 1.2s infinite cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .dot:nth-child(1) {
@@ -852,9 +852,26 @@ details[open] .activity-chevron {
   animation-delay: -0.16s;
 }
 
-@keyframes typing-bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
+@keyframes typing-pulse {
+  0%, 80%, 100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: typing-fade 1.4s infinite ease-in-out both;
+    transform: none !important;
+  }
+  @keyframes typing-fade {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.95; }
+  }
 }
 
 .activity-inline-content {
@@ -978,9 +995,10 @@ details[open] .activity-chevron {
 }
 
 .markdown-body :deep(blockquote) {
-  margin: 8px 0;
-  padding: 4px 14px;
-  border-left: 3px solid hsl(var(--border));
+  margin: 10px 0;
+  padding: 8px 14px;
+  background-color: hsl(var(--muted) / 0.5);
+  border-radius: 6px;
   color: hsl(var(--muted-foreground));
 }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AgentToolCall, SessionProgress } from '@/store/dataStudioStore'
 import type { ChatMessage } from '@/types/chat'
-import { Bot, ShieldCheck } from 'lucide-vue-next'
+import { Bot, ShieldCheck, Square } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -10,7 +10,6 @@ import { ToolPermissionReview } from '@/components/ai-permissions'
 import ContextIndicator from '@/components/context-indicator.vue'
 import ModelPicker from '@/components/model-picker.vue'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Spinner } from '@/components/ui/spinner'
 import { toast } from '@/composables/useNotifications'
 import { useAppStore } from '@/store'
 import ToolConfirmationCard from '@/views/data-studio/components/tool-confirmation-card.vue'
@@ -58,6 +57,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const { llmSettings } = storeToRefs(appStore)
+
+const isDataStudio = computed(() => props.feature === 'dataStudio')
 
 const inputText = ref('')
 const scrollAreaRef = ref<{ viewportElement: HTMLElement | null } | null>(null)
@@ -187,6 +188,42 @@ const featureRoute = computed(() =>
 const selectedModelId = computed(() => featureRoute.value.selectedModelId ?? undefined)
 const recentModelIds = computed(() => (selectedModelId.value ? [selectedModelId.value] : []))
 
+const isLocalModel = computed(() => {
+  if (!selectedModelId.value)
+    return false
+
+  const modelId = selectedModelId.value
+  const providerId = modelId.includes('::') ? modelId.split('::')[0] : null
+  const provider = providerId
+    ? llmSettings.value.providers.find(p => p.id === providerId)
+    : llmSettings.value.providers.find(p => p.enabled && (p.models ?? []).includes(modelId))
+
+  if (!provider)
+    return false
+
+  const kind = (provider.kind || '').toLowerCase()
+  const id = (provider.id || '').toLowerCase()
+  const name = (provider.name || '').toLowerCase()
+  const baseUrl = (provider.baseUrl || '').toLowerCase()
+
+  if (kind === 'ollama' || kind === 'lm-studio' || kind === 'local')
+    return true
+  if (id.includes('ollama') || id.includes('lm-studio') || id.includes('local'))
+    return true
+  if (name.includes('ollama') || name.includes('lm studio') || name.includes('local'))
+    return true
+  if (
+    baseUrl.includes('localhost')
+    || baseUrl.includes('127.0.0.1')
+    || baseUrl.includes('0.0.0.0')
+    || baseUrl.includes('[::1]')
+  ) {
+    return true
+  }
+
+  return false
+})
+
 // ── Input ─────────────────────────────────────────────────────────────
 
 function sendMessage() {
@@ -255,95 +292,108 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full w-full">
-    <!-- Header slot -->
-    <div v-if="$slots.header" class="shrink-0 w-full">
-      <slot name="header" />
-    </div>
+  <div
+    class="flex flex-col h-full w-full"
+    :class="isDataStudio ? 'gap-2 overflow-hidden' : ''"
+  >
+    <!-- Top Card: Percakapan (Header + Messages) -->
+    <div
+      class="flex flex-1 flex-col min-h-0 w-full overflow-hidden"
+      :class="isDataStudio ? 'border border-border/70 rounded-xl bg-card/40 shadow-sm' : ''"
+    >
+      <!-- Header slot with divider line inside Top Card -->
+      <div
+        v-if="$slots.header"
+        class="shrink-0 w-full"
+        :class="isDataStudio ? 'border-b border-border/40' : ''"
+      >
+        <slot name="header" />
+      </div>
 
-    <!-- Messages area -->
-    <div class="flex-1 min-h-0 w-full">
-      <ScrollArea ref="scrollAreaRef" class="h-full w-full">
-        <!-- Empty state -->
-        <div v-if="messages.length === 0 && !isLoading" class="px-4 text-center flex flex-col h-full w-full select-none items-center justify-center">
-          <Bot class="text-muted-foreground/80 mb-3 h-16 w-16 stroke-[1.5]" />
-          <h2 class="text-xl text-foreground tracking-tight font-medium mb-1">
-            What I can do for you?
-          </h2>
-          <p class="text-xs text-muted-foreground max-w-sm">
-            <slot name="empty">
-              {{ emptyHint || t('dataStudio.agent.emptyState') }}
-            </slot>
-          </p>
-        </div>
+      <!-- Messages area -->
+      <div class="flex-1 min-h-0 w-full">
+        <ScrollArea ref="scrollAreaRef" class="h-full w-full">
+          <!-- Empty state -->
+          <div v-if="messages.length === 0 && !isLoading" class="px-4 text-center flex flex-col h-full w-full select-none items-center justify-center">
+            <Bot class="text-muted-foreground mb-3 h-16 w-16 stroke-[1.5]" />
+            <h2 class="text-xl text-foreground tracking-tight font-medium mb-1">
+              What I can do for you?
+            </h2>
+            <p class="text-xs text-muted-foreground max-w-sm">
+              <slot name="empty">
+                {{ emptyHint || t('dataStudio.agent.emptyState') }}
+              </slot>
+            </p>
+          </div>
 
-        <!-- Message bubbles -->
-        <AgentMessageBubble
-          v-for="(msg, index) in messages"
-          :key="msg.id"
-          :message="msg"
-          :iteration-index="iterationIndexMap[msg.id]"
-          :can-retry="!recoveryBusy"
-          :historical="index < currentTurnStart"
-          @review-permissions="reviewingTool = $event"
-          @retry-tool-call="retryToolCall"
-        />
-
-        <!-- Tool confirmation cards -->
-        <div v-for="msg in messages" :key="`conf-${msg.id}`">
-          <ToolConfirmationCard
-            v-for="tc in ((msg as any).toolCalls?.filter((tc: any) => tc.requiresConfirmation && tc.status === 'pending') ?? [])"
-            :key="tc.id"
-            :tool-call="tc"
-            @confirm="emit('confirmToolCall', msg.id, $event)"
+          <!-- Message bubbles -->
+          <AgentMessageBubble
+            v-for="(msg, index) in messages"
+            :key="msg.id"
+            :message="msg"
+            :iteration-index="iterationIndexMap[msg.id]"
+            :can-retry="!recoveryBusy"
+            :historical="index < currentTurnStart"
+            @review-permissions="reviewingTool = $event"
+            @retry-tool-call="retryToolCall"
           />
-        </div>
 
-        <!-- Error banner -->
-        <div v-if="error" class="text-sm text-destructive-text mx-4 mb-2 p-3 border border-destructive/20 rounded-lg bg-destructive/10 flex gap-2 items-start">
-          <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
-          <span class="flex-1 min-w-0">{{ error }}</span>
+          <!-- Tool confirmation cards -->
+          <div v-for="msg in messages" :key="`conf-${msg.id}`">
+            <ToolConfirmationCard
+              v-for="tc in ((msg as any).toolCalls?.filter((tc: any) => tc.requiresConfirmation && tc.status === 'pending') ?? [])"
+              :key="tc.id"
+              :tool-call="tc"
+              @confirm="emit('confirmToolCall', msg.id, $event)"
+            />
+          </div>
+
+          <!-- Error banner -->
+          <div v-if="error" class="text-sm text-destructive-text mx-4 mb-2 p-3 border border-destructive/20 rounded-lg bg-destructive/10 flex gap-2 items-start">
+            <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
+            <span class="flex-1 min-w-0">{{ error }}</span>
+            <button
+              class="text-destructive-text p-0.5 rounded shrink-0 transition-colors hover:text-destructive-text"
+              @click="emit('dismissError')"
+            >
+              <span class="i-carbon-close h-3.5 w-3.5" />
+            </button>
+          </div>
+        </ScrollArea>
+      </div>
+
+      <!-- Stop banner -->
+      <div v-if="stopReason && stopMessage" class="mx-4 mb-2 p-3 border rounded-xl flex gap-2 items-center justify-between" style="border-color: hsl(38 92% 50% / 0.35); background: hsl(38 92% 50% / 0.08);">
+        <div class="flex gap-2 items-start">
+          <span class="i-carbon-pause-filled shrink-0 h-4 w-4" style="color: hsl(38 92% 50%);" />
+          <div class="flex flex-col gap-0.5">
+            <span class="text-xs font-medium">{{ stopMessage }}</span>
+            <span class="text-caption text-muted-foreground">{{ t('dataStudio.agent.continueHint') }}</span>
+          </div>
+        </div>
+        <div class="flex shrink-0 gap-1.5">
           <button
-            class="text-destructive-text p-0.5 rounded shrink-0 transition-colors hover:text-destructive-text"
-            @click="emit('dismissError')"
+            class="text-xs font-semibold px-2.5 py-1 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style="border: 1px solid transparent; background: transparent; color: hsl(var(--muted-foreground));"
+            :disabled="isLoading"
+            @click="emit('stopLoop')"
           >
-            <span class="i-carbon-close h-3.5 w-3.5" />
+            {{ t('dataStudio.agent.stop') }}
+          </button>
+          <button
+            class="text-xs font-semibold px-2.5 py-1 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style="border: 1px solid hsl(38 92% 50% / 0.5); background: hsl(38 92% 50% / 0.15);"
+            :disabled="isLoading"
+            @click="handleContinue"
+          >
+            {{ t('dataStudio.agent.continue') }}
           </button>
         </div>
-      </ScrollArea>
-    </div>
-
-    <!-- Stop banner -->
-    <div v-if="stopReason && stopMessage" class="mx-4 mb-2 p-3 border rounded-xl flex gap-2 items-center justify-between" style="border-color: hsl(38 92% 50% / 0.35); background: hsl(38 92% 50% / 0.08);">
-      <div class="flex gap-2 items-start">
-        <span class="i-carbon-pause-filled shrink-0 h-4 w-4" style="color: hsl(38 92% 50%);" />
-        <div class="flex flex-col gap-0.5">
-          <span class="text-xs font-medium">{{ stopMessage }}</span>
-          <span class="text-caption text-muted-foreground">{{ t('dataStudio.agent.continueHint') }}</span>
-        </div>
-      </div>
-      <div class="flex shrink-0 gap-1.5">
-        <button
-          class="text-xs font-semibold px-2.5 py-1 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style="border: 1px solid transparent; background: transparent; color: hsl(var(--muted-foreground));"
-          :disabled="isLoading"
-          @click="emit('stopLoop')"
-        >
-          {{ t('dataStudio.agent.stop') }}
-        </button>
-        <button
-          class="text-xs font-semibold px-2.5 py-1 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          style="border: 1px solid hsl(38 92% 50% / 0.5); background: hsl(38 92% 50% / 0.15);"
-          :disabled="isLoading"
-          @click="handleContinue"
-        >
-          {{ t('dataStudio.agent.continue') }}
-        </button>
       </div>
     </div>
 
-    <!-- Input area -->
-    <div class="chat-input-area">
+    <!-- Bottom Card: Chat Input -->
+    <div :class="isDataStudio ? 'w-full shrink-0' : 'chat-input-area'">
       <p v-if="awaitingDecision" role="status" class="text-xs text-warning mb-2 px-1 flex gap-2 items-center">
         <span aria-hidden="true" class="i-carbon-pause shrink-0 h-4 w-4" />
         {{ t('dataStudio.agent.message.awaitingPermissionDecision') }}
@@ -376,7 +426,10 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="chat-input-wrapper">
+      <div
+        class="chat-input-wrapper"
+        :class="isDataStudio ? 'border border-border/70 rounded-xl bg-card/40! shadow-sm' : ''"
+      >
         <textarea
           v-model="inputText"
           class="chat-textarea"
@@ -406,8 +459,9 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="toolbar-right">
-            <!-- Zero Data Leak Privacy Guard Badge -->
+            <!-- Zero Data Leak Privacy Guard Badge (Local models only) -->
             <div
+              v-if="isLocalModel"
               class="text-[11px] text-emerald-600 font-medium px-2 py-0.5 border border-emerald-500/20 rounded-md bg-emerald-500/10 gap-1 hidden cursor-help select-none items-center dark:text-emerald-400 sm:inline-flex"
               title="Zero Data Leak Guard: DBolt only provides schema metadata. Production table row values are never transmitted to AI models."
             >
@@ -422,11 +476,11 @@ onBeforeUnmount(() => {
             <slot name="toolbar-right" />
             <button
               class="send-button"
-              :class="{ 'send-button--stop': isLoading }"
               :disabled="!canSend && !isLoading"
+              :title="isLoading ? t('dataStudio.agent.stop') : undefined"
               @click="isLoading ? emit('stopLoop') : sendMessage()"
             >
-              <Spinner v-if="isLoading" size="sm" />
+              <Square v-if="isLoading" class="h-3 w-3 fill-current" />
               <span v-else class="i-carbon-arrow-up h-4 w-4" />
             </button>
           </div>
@@ -447,9 +501,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .chat-input-area {
-  padding: 8px 16px 16px;
+  padding: 10px 16px 16px;
   position: relative;
   width: 100%;
+  background: transparent;
 }
 
 .chat-input-wrapper {
@@ -458,6 +513,12 @@ onBeforeUnmount(() => {
   border: 1px solid hsl(var(--border));
   border-radius: 12px;
   background: hsl(var(--background));
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chat-input-wrapper:focus-within {
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 1px hsl(var(--ring));
 }
 
 .chat-textarea {
@@ -489,7 +550,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 4px 10px;
   min-height: 38px;
-  border-top: 1px solid hsl(var(--border) / 0.6);
+  border-top: 1px solid hsl(var(--border));
 }
 
 .toolbar-left {
@@ -522,14 +583,14 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.send-button:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
+.send-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
 }
 
-.send-button--stop {
-  background: hsl(var(--destructive));
-  color: hsl(var(--destructive-foreground));
+.send-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .loop-stopped-banner {

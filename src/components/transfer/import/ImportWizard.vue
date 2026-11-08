@@ -383,14 +383,10 @@ onUnmounted(() => {
       :summary="fileSummary"
     >
       <div class="space-y-4">
-        <FileDropZone @file-selected="handleFileDrop" />
-
-        <div class="flex justify-end">
-          <Button variant="outline" size="sm" @click="handleFileBrowse">
-            <div class="i-carbon-folder-open mr-2" />
-            {{ t('transfer.import.browseFiles') }}
-          </Button>
-        </div>
+        <FileDropZone
+          @file-selected="handleFileDrop"
+          @browse="handleFileBrowse"
+        />
 
         <div v-if="detectionResult" class="mt-4 pt-3 border-t border-border/40 space-y-3">
           <div class="gap-2.5 grid grid-cols-2">

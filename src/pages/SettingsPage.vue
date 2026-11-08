@@ -139,8 +139,8 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
 <template>
   <AppLayout>
     <div class="flex flex-col h-full">
-      <!-- Sticky header -->
-      <div class="px-6 py-4 border-b bg-background top-0 sticky z-10">
+      <!-- Header -->
+      <header class="px-6 py-3 border-b border-border/40 bg-background top-0 sticky z-10">
         <div class="mx-auto flex gap-3 max-w-4xl items-center">
           <h1 class="text-xl font-semibold">
             {{ t('pages.settings.title') }}
@@ -149,23 +149,17 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
           <span class="text-sm text-muted-foreground">{{ t('pages.settings.subtitle') }}</span>
           <span v-if="preferencesSaved" class="text-xs text-muted-foreground ml-auto flex gap-1.5 items-center" role="status"><span class="i-lucide-circle-check text-success h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.feedback.saved') }}</span>
         </div>
-      </div>
+      </header>
 
       <!-- Tabbed settings content -->
       <Tabs
-        default-value="appearance"
+        default-value="general"
         class="px-6 py-4 flex-1 overflow-y-auto"
       >
         <div class="mx-auto max-w-4xl">
           <TabsList class="mb-6 flex-wrap h-auto max-w-full justify-start">
-            <TabsTrigger value="appearance">
-              {{ t('pages.settings.appearance.title') }}
-            </TabsTrigger>
-            <TabsTrigger value="editor">
-              {{ t('pages.settings.editor.title') }}
-            </TabsTrigger>
-            <TabsTrigger value="query">
-              {{ t('pages.settings.query.title') }}
+            <TabsTrigger value="general">
+              {{ t('pages.settings.general.title') }}
             </TabsTrigger>
             <TabsTrigger value="ai" class="gap-1.5">
               {{ t('pages.settings.ai.tabLabel') }}
@@ -181,14 +175,10 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
             </TabsTrigger>
           </TabsList>
 
-          <!-- Appearance Tab -->
-          <TabsContent value="appearance" class="mt-0 space-y-6">
+          <!-- General Tab: Appearance + Editor + Query Execution -->
+          <TabsContent value="general" class="mt-0 space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>{{ t('pages.settings.appearance.title') }}</CardTitle>
-                <CardDescription>{{ t('pages.settings.appearance.description') }}</CardDescription>
-              </CardHeader>
-              <CardContent class="space-y-6">
+              <CardContent class="p-6">
                 <!-- Theme selector -->
                 <div class="space-y-3">
                   <Label>{{ t('pages.settings.general.theme') }}</Label>
@@ -236,10 +226,7 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <!-- Editor Tab -->
-          <TabsContent value="editor" class="mt-0">
             <Card>
               <CardHeader>
                 <CardTitle>{{ t('pages.settings.editor.title') }}</CardTitle>
@@ -405,10 +392,7 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
 
-          <!-- Query Tab -->
-          <TabsContent value="query" class="mt-0">
             <Card>
               <CardHeader>
                 <CardTitle>{{ t('pages.settings.query.title') }}</CardTitle>

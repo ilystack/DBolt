@@ -13,7 +13,7 @@ import {
   Trash2,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ChatPanel from '@/components/chat-panel.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -132,6 +132,62 @@ async function selectMode(mode: 'Ask' | 'Agent' | 'Plan') {
   modeMenuOpen.value = false
   const target = mode === 'Agent' ? 'Auto' : mode
   await dataStudioStore.setSessionPermissionsMode(target as any)
+}
+
+const isEditingTitle = ref(false)
+const editingTitleText = ref('')
+const titleInputRef = ref<HTMLInputElement | null>(null)
+
+const displaySessionTitle = computed(() => {
+  const customTitle = activeSession.value?.title?.trim()
+  const defaultPlaceholders = new Set([
+    'New Chat',
+    'New Session',
+    'AI Assistant',
+    t('dataStudio.history.newSession'),
+  ])
+
+  // 1. If user custom-named the session
+  if (customTitle && !defaultPlaceholders.has(customTitle)) {
+    return customTitle
+  }
+
+  // 2. Otherwise summarize/derive from the first user message
+  const firstUser = messages.value.find(m => m.role === 'user' && m.content?.trim())
+  if (firstUser?.content) {
+    const singleLine = firstUser.content.replace(/\s+/g, ' ').trim()
+    return singleLine.length > 45 ? `${singleLine.slice(0, 45)}…` : singleLine
+  }
+
+  // 3. Fallback when there is no chat yet
+  return t('dataStudio.history.newSession')
+})
+
+function startEditTitle() {
+  editingTitleText.value = displaySessionTitle.value
+  isEditingTitle.value = true
+  nextTick(() => {
+    titleInputRef.value?.focus()
+    titleInputRef.value?.select()
+  })
+}
+
+function saveTitle() {
+  if (!isEditingTitle.value)
+    return
+  const newTitle = editingTitleText.value.trim()
+  if (activeSession.value && newTitle) {
+    activeSession.value.title = newTitle
+    const sess = dataStudioStore.sessions.find(s => s.id === activeSession.value?.id)
+    if (sess) {
+      sess.title = newTitle
+    }
+  }
+  isEditingTitle.value = false
+}
+
+function cancelEditTitle() {
+  isEditingTitle.value = false
 }
 
 const showModifyModal = ref(false)
@@ -311,47 +367,12 @@ function syncAllProviderModels() {
 </script>
 
 <template>
-  <AppLayout :hide-ai-button="true">
-    <div class="bg-background flex h-full w-full relative overflow-hidden">
+  <AppLayout :hide-ai-button="true" :plain="true">
+    <div class="flex flex-1 gap-2 min-h-0 w-full relative overflow-hidden">
       <!-- Main Conversation Area -->
       <div class="flex flex-1 flex-col h-full min-w-0 w-full relative">
-        <!-- Floating top-right controls (clean, borderless) -->
-        <div class="px-4 flex shrink-0 gap-1.5 h-10 w-full items-center justify-end z-10">
-          <button
-            v-if="isLoading"
-            class="text-destructive rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:bg-destructive/10"
-            :title="t('dataStudio.agent.stop')"
-            @click="cancelSession"
-          >
-            <span class="i-carbon-stop-filled h-4 w-4" />
-          </button>
-          <button
-            v-if="hasMessages"
-            class="text-muted-foreground rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
-            :title="t('dataStudio.agent.clearChat')"
-            @click="clearChat"
-          >
-            <Trash2 class="h-4 w-4" />
-          </button>
-          <button
-            class="text-muted-foreground rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
-            :title="t('dataStudio.history.newSession')"
-            @click="startNewSession"
-          >
-            <SquarePen class="h-4 w-4" />
-          </button>
-          <button
-            class="text-muted-foreground rounded-md inline-flex h-8 w-8 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
-            :class="{ 'text-foreground bg-muted/40': historyPanelOpen }"
-            :title="t('dataStudio.history.title')"
-            @click="historyPanelOpen = !historyPanelOpen"
-          >
-            <PanelRight class="h-4 w-4" />
-          </button>
-        </div>
-
         <!-- Chat Panel -->
-        <div class="flex-1 min-h-0 w-full">
+        <div class="flex-1 h-full min-h-0 w-full">
           <ChatPanel
             :messages="messages"
             :is-loading="isLoading"
@@ -372,6 +393,64 @@ function syncAllProviderModels() {
             @model-picker-open="syncAllProviderModels"
             @dismiss-error="dismissError"
           >
+            <!-- Top Card Header: Title & Actions -->
+            <template #header>
+              <div class="px-5 py-2.5 flex shrink-0 items-center justify-between">
+                <div class="flex gap-2 min-w-0 items-center">
+                  <div v-if="isEditingTitle" class="flex min-w-0 items-center">
+                    <input
+                      ref="titleInputRef"
+                      v-model="editingTitleText"
+                      class="text-sm text-foreground font-medium px-2 py-0.5 outline-none border border-primary/50 rounded bg-background h-7 w-64 focus:ring-1 focus:ring-primary"
+                      @keydown.enter="saveTitle"
+                      @keydown.esc="cancelEditTitle"
+                      @blur="saveTitle"
+                    >
+                  </div>
+                  <span
+                    v-else
+                    class="text-sm text-foreground font-medium max-w-md cursor-pointer truncate transition-colors hover:text-foreground/80"
+                    :title="t('common.buttons.edit') || 'Click to edit title'"
+                    @click="startEditTitle"
+                  >
+                    {{ displaySessionTitle }}
+                  </span>
+                </div>
+                <div class="flex gap-1.5 items-center">
+                  <button
+                    v-if="isLoading"
+                    class="text-destructive rounded-md inline-flex h-7 w-7 cursor-pointer transition-colors items-center justify-center hover:bg-destructive/10"
+                    :title="t('dataStudio.agent.stop')"
+                    @click="cancelSession"
+                  >
+                    <span class="i-carbon-stop-filled h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    v-if="hasMessages"
+                    class="text-muted-foreground rounded-md inline-flex h-7 w-7 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
+                    :title="t('dataStudio.agent.clearChat')"
+                    @click="clearChat"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    class="text-muted-foreground rounded-md inline-flex h-7 w-7 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
+                    :title="t('dataStudio.history.newSession')"
+                    @click="startNewSession"
+                  >
+                    <SquarePen class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    class="text-muted-foreground rounded-md inline-flex h-7 w-7 cursor-pointer transition-colors items-center justify-center hover:text-foreground hover:bg-muted/40"
+                    :class="{ 'text-foreground bg-muted/40': historyPanelOpen }"
+                    :title="t('dataStudio.history.title')"
+                    @click="historyPanelOpen = !historyPanelOpen"
+                  >
+                    <PanelRight class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </template>
             <!-- toolbar-left: [+] button FIRST, then attached source chips -->
             <template #toolbar-left>
               <!-- Add source dropdown -->
@@ -523,19 +602,17 @@ function syncAllProviderModels() {
       </div>
 
       <!-- History Panel (Right Sidebar) -->
-      <Transition name="sidebar-slide">
-        <div
-          v-if="historyPanelOpen"
-          class="border-l border-border bg-background shrink-0 h-full w-72 transition-all duration-200 overflow-y-auto md:w-80"
-        >
-          <SessionHistoryPanel
-            @select="switchSession"
-            @delete="deleteSession"
-            @new-session="startNewSession"
-            @close="historyPanelOpen = false"
-          />
-        </div>
-      </Transition>
+      <div
+        v-if="historyPanelOpen"
+        class="border border-border/70 rounded-xl bg-card/40 flex shrink-0 flex-col h-full w-72 shadow-sm overflow-hidden md:w-80"
+      >
+        <SessionHistoryPanel
+          @select="switchSession"
+          @delete="deleteSession"
+          @new-session="startNewSession"
+          @close="historyPanelOpen = false"
+        />
+      </div>
 
       <!-- Modals -->
       <ModifySourceModal v-model:open="showModifyModal" :source-idx="selectedSourceIdx" />
@@ -935,16 +1012,6 @@ function syncAllProviderModels() {
 .mode-menu-row--active {
   color: hsl(var(--foreground));
   background: hsl(var(--muted) / 0.3);
-}
-
-.sidebar-slide-enter-active,
-.sidebar-slide-leave-active {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.sidebar-slide-enter-from,
-.sidebar-slide-leave-to {
-  margin-right: -20rem;
-  opacity: 0;
 }
 
 .menu-rise-enter-active {

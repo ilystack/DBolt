@@ -64,9 +64,13 @@ const filteredOptions = computed(() => {
   if (!searchQuery.value.trim()) {
     return props.options
   }
-  const query = searchQuery.value.toLowerCase()
+  const query = searchQuery.value.toLowerCase().trim()
   return props.options.filter(
-    opt => opt.label.toLowerCase().includes(query) || opt.value.toLowerCase().includes(query),
+    opt =>
+      opt.label.toLowerCase().includes(query)
+      || opt.value.toLowerCase().includes(query)
+      || opt.keywords?.some(k => k.toLowerCase().includes(query))
+      || opt.group?.toLowerCase().includes(query),
   )
 })
 
@@ -224,7 +228,7 @@ watch(searchQuery, () => {
       class="w-[unset]"
       style="padding: 0; width: var(--radix-popover-trigger-width); min-width: var(--radix-popover-trigger-width)"
     >
-      <div :id="listboxId" ref="listRef" role="listbox" class="py-1 pl-1 pr-0 max-h-[280px] overflow-y-auto">
+      <div :id="listboxId" ref="listRef" role="listbox" class="px-1 py-1 max-h-[340px] overflow-y-auto">
         <div
           v-if="loading"
           class="text-sm text-muted-foreground py-4 flex gap-2 items-center justify-center"
@@ -238,7 +242,7 @@ watch(searchQuery, () => {
             <!-- Group header -->
             <div
               v-if="option.group && (index === 0 || filteredOptions[index - 1]?.group !== option.group)"
-              class="text-xs text-muted-foreground font-medium px-2 py-1 pt-2 select-none"
+              class="text-[11px] text-muted-foreground/80 tracking-wider font-semibold px-2.5 py-1.5 border-b border-border/30 bg-popover/95 select-none uppercase top-0 sticky z-10 backdrop-blur-xs first:border-t-0"
             >
               {{ option.group }}
             </div>
@@ -253,9 +257,9 @@ watch(searchQuery, () => {
                   ? ''
                   : undefined
               "
-              class="px-1 py-0.5 outline-none flex cursor-pointer select-none transition-colors items-center relative hover:text-accent-foreground hover:bg-accent" :class="[
+              class="text-sm my-0.5 px-2 py-1.5 outline-none rounded-md flex cursor-pointer select-none transition-colors items-center relative hover:text-accent-foreground hover:bg-accent" :class="[
                 option.disabled && 'pointer-events-none opacity-50',
-                option.value === modelValue && 'bg-accent text-accent-foreground',
+                option.value === modelValue && 'bg-accent text-accent-foreground font-medium',
                 navigableItems[highlightedIndex]?.type === 'option'
                   && navigableItems[highlightedIndex]?.value === option.value
                   && 'bg-accent text-accent-foreground',
@@ -264,7 +268,7 @@ watch(searchQuery, () => {
               @mouseenter="highlightedIndex = findOptionIndex(option.value)"
             >
               <slot name="option" :option="option">
-                {{ option.label }}
+                <span class="truncate">{{ option.label }}</span>
               </slot>
             </div>
           </template>

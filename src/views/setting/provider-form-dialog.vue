@@ -217,6 +217,75 @@ function validateForm(): boolean {
   return Object.keys(errors).length === 0
 }
 
+const testingConnection = ref(false)
+
+const handleTestConnection = async () => {
+  if (testingConnection.value)
+    return
+  if (!validateForm())
+    return
+
+  let resolvedApiKey = draft.value.apiKey
+  if (resolvedApiKey === API_KEY_SENTINEL || (!resolvedApiKey && isEdit.value)) {
+    resolvedApiKey = props.provider?.apiKey ?? ''
+  }
+
+  testingConnection.value = true
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    let success = false
+    try {
+      const models = await invoke('list_llm_models', {
+        provider: draft.value.apiCompatibility,
+        apiKey: resolvedApiKey,
+        baseUrl: draft.value.baseUrl || null,
+        httpProxy: draft.value.proxy || null,
+        proxyMode: draft.value.proxyMode || 'none',
+      })
+      if (Array.isArray(models) && models.length > 0) {
+        success = true
+        if (!draft.value.models || draft.value.models.length === 0) {
+          draft.value.models = models
+          modelsInput.value = models.join(', ')
+        }
+      }
+    }
+    catch {}
+
+    if (!success) {
+      const fallbackModel = (draft.value.models && draft.value.models.length > 0)
+        ? draft.value.models[0]
+        : (draft.value.apiCompatibility === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o')
+
+      const valid = await invoke('validate_llm_config', {
+        provider: draft.value.apiCompatibility,
+        apiKey: resolvedApiKey,
+        model: fallbackModel,
+        httpProxy: draft.value.proxy || null,
+        proxyMode: draft.value.proxyMode || 'none',
+        baseUrl: draft.value.baseUrl || null,
+      })
+      success = Boolean(valid)
+    }
+
+    if (success) {
+      toast.success(t('pages.settings.ai.providerList.testSuccess') || 'Connection successful')
+    }
+    else {
+      toast.error(t('pages.settings.ai.providerList.testFailed') || 'Connection test failed')
+    }
+  }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    toast.error(t('pages.settings.ai.providerList.testFailed') || 'Connection test failed', {
+      description: msg,
+    })
+  }
+  finally {
+    testingConnection.value = false
+  }
+}
+
 const saving = ref(false)
 const saveError = ref('')
 
@@ -468,13 +537,26 @@ watch(() => props.open, (open) => {
       </div>
 
       <SettingsFeedback v-if="saving || saveError" :state="saveError ? 'error' : 'pending'" :label="t(`pages.settings.feedback.${saveError ? 'failed' : 'saving'}`)" :detail="saveError" />
-      <DialogFooter>
-        <Button variant="outline" :disabled="saving" @click="$emit('close')">
-          {{ t('common.buttons.cancel') }}
+      <DialogFooter class="flex flex-row w-full items-center justify-between sm:justify-between">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          :disabled="testingConnection || saving"
+          @click="handleTestConnection"
+        >
+          <span v-if="testingConnection" class="i-carbon-circle-dash mr-1.5 shrink-0 h-4 w-4 animate-spin" />
+          <span v-else class="i-carbon-checkmark-outline mr-1.5 shrink-0 h-4 w-4" />
+          {{ t('common.buttons.testConnection') }}
         </Button>
-        <Button :disabled="saving" :aria-busy="saving" @click="handleSave">
-          {{ isEdit ? t('common.buttons.save') : t('pages.settings.ai.form.save') }}
-        </Button>
+        <div class="flex gap-2">
+          <Button variant="outline" :disabled="saving || testingConnection" @click="$emit('close')">
+            {{ t('common.buttons.cancel') }}
+          </Button>
+          <Button :disabled="saving || testingConnection" :aria-busy="saving" @click="handleSave">
+            {{ isEdit ? t('common.buttons.save') : t('pages.settings.ai.form.save') }}
+          </Button>
+        </div>
       </DialogFooter>
     </DialogContent>
   </Dialog>

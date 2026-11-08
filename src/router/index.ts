@@ -26,6 +26,11 @@ const routes = [
     component: () => import('@/pages/QueriesPage.vue'),
   },
   {
+    path: '/snippets',
+    name: 'snippets',
+    component: () => import('@/pages/SnippetsPage.vue'),
+  },
+  {
     path: '/history',
     name: 'history',
     component: () => import('@/pages/HistoryPage.vue'),

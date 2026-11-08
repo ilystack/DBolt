@@ -13,7 +13,7 @@ const GITHUB_REPO = 'https://github.com/ilystack/DBolt'
   <DropdownMenu v-model:open="open">
     <DropdownMenuTrigger as-child>
       <button
-        class="mx-auto flex h-8 w-8 cursor-pointer items-center justify-center relative focus:outline-none"
+        class="mx-auto rounded-lg flex h-9 w-9 cursor-pointer transition-colors items-center justify-center relative focus:outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
         title="DBolt"
       >
         <span

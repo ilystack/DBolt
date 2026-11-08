@@ -5,7 +5,6 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -83,14 +82,10 @@ watch(filePath, () => {
 
 <template>
   <div class="space-y-2">
-    <FileDropZone @file-selected="handleFileDrop" />
-
-    <div class="flex justify-end">
-      <Button variant="outline" size="sm" @click="handleBrowse">
-        <div class="i-carbon-folder-open mr-2" />
-        {{ t('transfer.import.browseFiles') }}
-      </Button>
-    </div>
+    <FileDropZone
+      @file-selected="handleFileDrop"
+      @browse="handleBrowse"
+    />
 
     <Card v-if="detectionResult" class="border-border/40 shadow-none">
       <CardContent class="p-3 space-y-3">

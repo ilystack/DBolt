@@ -93,11 +93,11 @@ describe('monaco theme integration', () => {
       base: 'vs-dark',
       inherit: true,
       colors: expect.objectContaining({
-        'editor.background': '#16181c',
-        'editorGutter.background': '#16181c',
-        'editor.foreground': '#e4e7ec',
-        'editorSuggestWidget.background': '#23262c',
-        'editorSuggestWidget.selectedBackground': '#263750',
+        'editor.background': '#0d0d0d',
+        'editorGutter.background': '#0d0d0d',
+        'editor.foreground': '#f2f2f2',
+        'editorSuggestWidget.background': '#171717',
+        'editorSuggestWidget.selectedBackground': '#333333',
       }),
     }))
     expect(monaco.editor.setTheme).toHaveBeenLastCalledWith('dbolt-dark')

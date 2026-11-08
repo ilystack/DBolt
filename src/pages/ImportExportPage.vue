@@ -8,9 +8,9 @@ const { t } = useI18n()
 
 <template>
   <AppLayout>
-    <div class="p-6 h-full">
-      <div class="space-y-6">
-        <!-- Page Header -->
+    <div class="bg-background flex flex-col h-full">
+      <!-- Header -->
+      <header class="px-6 py-3 border-b border-border/40 flex shrink-0 items-center justify-between">
         <div class="flex gap-3 items-center">
           <h1 class="text-xl font-semibold">
             {{ t('pages.importExport.title') }}
@@ -18,7 +18,9 @@ const { t } = useI18n()
           <span class="text-muted-foreground">|</span>
           <span class="text-sm text-muted-foreground">{{ t('pages.importExport.subtitle') }}</span>
         </div>
+      </header>
 
+      <div class="p-6 flex-1">
         <Card>
           <CardHeader>
             <CardTitle>{{ t('pages.importExport.card.title') }}</CardTitle>

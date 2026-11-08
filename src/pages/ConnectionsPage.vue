@@ -333,28 +333,29 @@ function getConnectionStatus(connectionId: string | undefined): ConnectionStatus
 <template>
   <AppLayout>
     <div class="flex flex-col h-full relative">
-      <div class="p-6 pb-0 shrink-0 space-y-6">
-        <div class="flex items-center justify-between">
-          <div class="flex gap-3 items-center">
-            <h1 class="text-xl font-semibold">
-              {{ t('pages.connections.title') }}
-            </h1>
-            <span class="text-muted-foreground">|</span>
-            <span class="text-sm text-muted-foreground">{{ t('pages.connections.subtitle') }}</span>
-          </div>
-          <div class="w-64 relative">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground h-4 w-4 left-3 top-1/2 absolute -translate-y-1/2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            <Input
-              v-model="searchQuery"
-              :placeholder="t('pages.connections.search')"
-              class="pl-9 bg-muted/50"
-            />
-          </div>
+      <!-- Header -->
+      <header class="px-6 py-3 border-b border-border/40 flex shrink-0 items-center justify-between">
+        <div class="flex gap-3 items-center">
+          <h1 class="text-xl font-semibold">
+            {{ t('pages.connections.title') }}
+          </h1>
+          <span class="text-muted-foreground">|</span>
+          <span class="text-sm text-muted-foreground">{{ t('pages.connections.subtitle') }}</span>
         </div>
+        <div class="w-64 relative">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground h-4 w-4 left-3 top-1/2 absolute -translate-y-1/2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <Input
+            v-model="searchQuery"
+            :placeholder="t('pages.connections.search')"
+            class="text-xs pl-9 bg-muted/50 h-8"
+          />
+        </div>
+      </header>
 
+      <div class="p-6 pb-0 shrink-0 space-y-6">
         <div class="gap-4 grid md:grid-cols-3">
           <Card class="p-4">
             <div class="flex items-center justify-between">

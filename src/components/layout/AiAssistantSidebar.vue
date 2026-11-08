@@ -107,16 +107,14 @@ onUnmounted(() => {
     <div class="resize-handle" @mousedown="startResize" />
 
     <!-- Session history slide-over -->
-    <transition name="history-slide">
-      <div v-if="historyPanelOpen" class="ai-assistant-history-overlay">
-        <SessionHistoryPanel
-          @select="switchSession"
-          @delete="deleteSession"
-          @new-session="handleNewSession"
-          @close="historyPanelOpen = false"
-        />
-      </div>
-    </transition>
+    <div v-if="historyPanelOpen" class="ai-assistant-history-overlay">
+      <SessionHistoryPanel
+        @select="switchSession"
+        @delete="deleteSession"
+        @new-session="handleNewSession"
+        @close="historyPanelOpen = false"
+      />
+    </div>
 
     <ChatPanel
       :messages="messages"
@@ -182,11 +180,26 @@ onUnmounted(() => {
 <style scoped>
 .ai-assistant-resizable {
   height: 100%;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border) / 0.7);
+  border-radius: 12px;
   position: relative;
-  background: hsl(var(--background));
+  background: hsl(var(--card) / 0.4);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .ai-assistant-resizable {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 40;
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+  }
 }
 
 .resize-handle {
@@ -214,25 +227,12 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-.history-slide-enter-active,
-.history-slide-leave-active {
-  transition:
-    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.2s ease;
-}
-
-.history-slide-enter-from,
-.history-slide-leave-to {
-  transform: translateX(100%);
-  opacity: 0;
-}
-
 .header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 12px 12px 16px;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border) / 0.4);
 }
 
 .header-title {
@@ -263,6 +263,11 @@ onUnmounted(() => {
 .header-icon-btn:hover {
   background: hsl(var(--muted));
   color: hsl(var(--foreground));
+}
+
+.header-icon-btn:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 1px;
 }
 
 .header-icon-btn--active {
