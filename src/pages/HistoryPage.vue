@@ -126,7 +126,7 @@ function handleToggleFavorite(id: string) {
 <template>
   <AppLayout :plain="true">
     <!-- Top Card: Header & Actions -->
-    <div class="px-5 py-3 border border-border/70 rounded-xl bg-card/40 flex shrink-0 shadow-sm items-center justify-between">
+    <div class="px-5 py-3 border border-border/40 rounded-xl bg-card/20 flex shrink-0 shadow-sm items-center justify-between">
       <div class="flex gap-3 items-center">
         <h1 class="text-xl font-semibold">
           {{ t('pages.history.title') }}
