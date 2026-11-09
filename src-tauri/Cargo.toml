@@ -1,6 +1,6 @@
 [package]
 name = "dbolt"
-version = "2.0.0"
+version = "2.1.0"
 description = "DBolt: Free and Open Source agentic cross-platform SQL database GUI client"
 authors = [ "DBolt Contributors" ]
 edition = "2021"

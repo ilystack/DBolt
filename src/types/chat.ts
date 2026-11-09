@@ -30,6 +30,7 @@ export type ChatSessionStopReason
 
 export type ChatSession = {
   id: string
+  title?: string
   messages: Array<ChatMessage>
   status: ChatSessionStatus
   schema?: string

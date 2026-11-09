@@ -38,6 +38,7 @@ function adaptDataStudioMessage(msg: AgentMessage): ChatMessage {
 function adaptDataStudioSession(session: AgentSession): ChatSession {
   return {
     id: session.id,
+    title: session.title,
     messages: session.messages.map(adaptDataStudioMessage),
     status: session.status as ChatSessionStatus,
     sources: session.sources,

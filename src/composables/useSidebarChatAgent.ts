@@ -21,6 +21,7 @@ function adaptSidebarSession(session: AgentSession): ChatSession {
   const appStore = useAppStore()
   return {
     id: session.id,
+    title: session.title,
     messages: session.messages.map(msg => ({
       id: msg.id,
       role: msg.role as ChatMessageRole,
