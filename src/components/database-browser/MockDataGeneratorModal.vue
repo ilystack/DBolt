@@ -70,6 +70,10 @@ const rowCount = ref<number>(25)
 const activeTab = ref<'columns' | 'preview_sql' | 'preview_table'>('columns')
 const columns = ref<ColumnConfig[]>([])
 const copied = ref(false)
+const isGeneratingAi = ref(false)
+const aiPromptDirective = ref('')
+const aiRows = ref<Record<string, string | number | boolean | null>[] | null>(null)
+const activeModelLabel = ref<string>('')
 
 const generatorOptions: { value: GeneratorType, label: string }[] = [
   { value: 'uuid', label: 'UUID (v4)' },
@@ -167,6 +171,8 @@ async function loadTableColumns() {
 
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
+    aiRows.value = null
+    aiPromptDirective.value = ''
     loadTableColumns()
   }
 })
@@ -266,20 +272,129 @@ const generatedRows = computed(() => {
   return rows
 })
 
+const finalRows = computed(() => {
+  if (aiRows.value && aiRows.value.length > 0) {
+    return aiRows.value.slice(0, rowCount.value)
+  }
+  return generatedRows.value
+})
+
+async function generateWithAi() {
+  if (activeColumns.value.length === 0) {
+    toast.error('Please select at least one column to generate')
+    return
+  }
+
+  isGeneratingAi.value = true
+  try {
+    const { useAppStore } = await import('@/store/appStore')
+    const appStore = useAppStore()
+    const { provider, model } = await appStore.getFeatureModelConfig('dataStudio')
+    activeModelLabel.value = model.label
+
+    const colsMetadata = activeColumns.value.map(c => ({
+      name: c.name,
+      dataType: c.dataType,
+      nullable: c.nullable,
+    }))
+
+    const count = Math.min(Math.max(1, rowCount.value), 100)
+    const tableId = props.schema ? `${props.schema}.${props.tableName}` : props.tableName
+
+    const promptUser = `Table: "${tableId}"
+Target Rows: ${count}
+Columns:
+${colsMetadata.map(c => `- ${c.name} (${c.dataType}${c.nullable ? ', nullable' : ''})`).join('\n')}
+${aiPromptDirective.value.trim() ? `User directive/domain context: ${aiPromptDirective.value.trim()}` : `Please infer the realistic domain and purpose from the table name ("${tableId}") and column names. Make the generated data completely realistic, coherent, and semantically meaningful.`}
+
+Instruction:
+Return ONLY a valid JSON array containing exactly ${count} objects matching the column names.
+No markdown block, no explanation, no other text.`
+
+    const responseRaw = await invoke<string>('run_agent_step', {
+      requestId: `mock-${Date.now()}`,
+      provider: provider.apiCompatibility || provider.kind || 'openai-compatible',
+      model: model.label,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a database mock data generator. You generate realistic domain-specific synthetic data matching column names and semantic context. You output STRICTLY a JSON array of objects. Never output markdown code fences, comments, or explanations.',
+        },
+        {
+          role: 'user',
+          content: promptUser,
+        },
+      ],
+      tools: [],
+      httpProxy: provider.proxy || null,
+      proxyMode: provider.proxyMode || 'system',
+      apiKey: provider.apiKey || '',
+      baseUrl: provider.baseUrl || null,
+    })
+
+    const parsedResponse = typeof responseRaw === 'string' ? JSON.parse(responseRaw) : responseRaw
+    let text = (parsedResponse.content || '').trim()
+    if (text.startsWith('```json'))
+      text = text.slice(7)
+    else if (text.startsWith('```'))
+      text = text.slice(3)
+    if (text.endsWith('```'))
+      text = text.slice(0, -3)
+    text = text.trim()
+
+    const jsonRows = JSON.parse(text)
+    if (!Array.isArray(jsonRows) || jsonRows.length === 0) {
+      throw new Error('AI response did not return a valid JSON array')
+    }
+
+    aiRows.value = jsonRows.map((row: Record<string, unknown>, idx: number) => {
+      const cleanRow: Record<string, string | number | boolean | null> = {}
+      for (const col of activeColumns.value) {
+        if (col.isAutoIncrement) {
+          cleanRow[col.name] = idx + 1
+        }
+        else if (row[col.name] !== undefined) {
+          cleanRow[col.name] = row[col.name] as never
+        }
+        else {
+          cleanRow[col.name] = generateValue(col.generator, idx)
+        }
+      }
+      return cleanRow
+    })
+
+    activeTab.value = 'preview_table'
+    toast.success(`Successfully generated ${aiRows.value.length} realistic rows with AI!`)
+  }
+  catch (err) {
+    console.error('Failed to generate mock data with AI:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    toast.error(`AI generation error: ${msg}`)
+  }
+  finally {
+    isGeneratingAi.value = false
+  }
+}
+
+function resetToRuleBased() {
+  aiRows.value = null
+  toast.info('Switched back to rule-based mock data')
+}
+
 const generatedSql = computed(() => {
   const cols = activeColumns.value
-  if (cols.length === 0 || generatedRows.value.length === 0)
+  if (cols.length === 0 || finalRows.value.length === 0)
     return '-- Select at least one column to generate INSERT statements.'
 
   const escapedCols = cols.map(c => `\`${c.name}\``).join(', ')
   const targetTable = props.schema ? `\`${props.schema}\`.\`${props.tableName}\`` : `\`${props.tableName}\``
 
-  const valueRows = generatedRows.value.map((row) => {
+  const valueRows = finalRows.value.map((row) => {
     const rowVals = cols.map(c => formatSqlLiteral(row[c.name]))
     return `  (${rowVals.join(', ')})`
   })
 
-  return `-- DBolt Smart Mock Data Generator (${generatedRows.value.length} rows)\nINSERT INTO ${targetTable} (${escapedCols})\nVALUES\n${valueRows.join(',\n')};`
+  return `-- DBolt Smart Mock Data Generator (${finalRows.value.length} rows${aiRows.value ? ' - AI Generated' : ''})\nINSERT INTO ${targetTable} (${escapedCols})\nVALUES\n${valueRows.join(',\n')};`
 })
 
 async function copySql() {
@@ -316,8 +431,8 @@ async function insertDirectly() {
       schema: props.schema || null,
       sql: generatedSql.value,
     })
-    toast.success(`Successfully inserted ${generatedRows.value.length} rows into ${props.tableName}!`)
-    emit('seeded', generatedRows.value.length)
+    toast.success(`Successfully inserted ${finalRows.value.length} rows into ${props.tableName}!`)
+    emit('seeded', finalRows.value.length)
     emit('update:open', false)
   }
   catch (err) {
@@ -358,6 +473,48 @@ async function insertDirectly() {
         </div>
       </div>
 
+      <!-- AI Directive & Generator Bar -->
+      <div class="px-5 py-2.5 border-b bg-card/60 flex flex-wrap gap-2.5 items-center justify-between">
+        <div class="flex flex-1 gap-2 min-w-[280px] items-center">
+          <span class="text-xs text-foreground font-medium flex shrink-0 gap-1.5 items-center">
+            <span class="i-carbon-machine-learning-model text-primary h-3.5 w-3.5" />
+            AI Context:
+          </span>
+          <input
+            v-model="aiPromptDirective"
+            type="text"
+            placeholder="Optional context: e.g. Buku perpustakaan Indonesia, novel best seller..."
+            class="text-xs text-foreground px-2.5 py-1 border border-border/70 rounded bg-background flex-1 min-w-0 placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+            :disabled="isGeneratingAi"
+            @keydown.enter="generateWithAi"
+          >
+        </div>
+
+        <div class="flex shrink-0 gap-2 items-center">
+          <Button
+            size="sm"
+            class="text-xs font-medium px-3 gap-1.5 h-7"
+            :disabled="isGeneratingAi || loading || activeColumns.length === 0"
+            @click="generateWithAi"
+          >
+            <Spinner v-if="isGeneratingAi" size="sm" class="h-3.5 w-3.5" />
+            <span v-else class="i-carbon-sparkle h-3.5 w-3.5" />
+            <span>{{ isGeneratingAi ? 'Generating AI Mock...' : (aiRows ? 'Regenerate with AI' : 'Generate with AI') }}</span>
+          </Button>
+
+          <Button
+            v-if="aiRows"
+            variant="ghost"
+            size="sm"
+            class="text-xs text-muted-foreground px-2 h-7 hover:text-foreground"
+            title="Reset to rule-based mock data"
+            @click="resetToRuleBased"
+          >
+            Reset
+          </Button>
+        </div>
+      </div>
+
       <!-- Navigation tabs -->
       <div class="text-xs font-medium px-5 pb-0 pt-2 border-b bg-card/30 flex shrink-0 gap-4">
         <button
@@ -377,6 +534,12 @@ async function insertDirectly() {
         >
           <Eye class="h-3.5 w-3.5" />
           <span>Live Data Preview</span>
+          <span
+            v-if="aiRows"
+            class="text-[10px] text-primary font-medium font-sans px-1.5 py-0.2 rounded bg-primary/15"
+          >
+            AI
+          </span>
         </button>
         <button
           type="button"
@@ -497,15 +660,30 @@ async function insertDirectly() {
 
         <!-- 2. Live Data Preview Tab -->
         <div v-else-if="activeTab === 'preview_table'" class="space-y-3">
-          <p class="text-xs text-muted-foreground">
-            Preview of first 5 synthetic records that will be generated:
-          </p>
+          <div class="text-xs text-muted-foreground flex items-center justify-between">
+            <p>
+              Preview of first {{ Math.min(finalRows.length, 5) }} synthetic records that will be generated:
+            </p>
+            <span
+              v-if="aiRows"
+              class="text-[11px] text-primary font-medium px-2 py-0.5 border border-primary/20 rounded bg-primary/10 flex gap-1 items-center"
+            >
+              <span class="i-carbon-machine-learning-model h-3 w-3" />
+              AI Powered ({{ aiRows.length }} rows)
+            </span>
+            <span
+              v-else
+              class="text-[11px] text-muted-foreground font-medium px-2 py-0.5 rounded bg-muted/60"
+            >
+              Rule-based mock
+            </span>
+          </div>
 
           <div class="border rounded-lg bg-card/40 overflow-x-auto">
             <table class="text-xs text-left w-full">
               <thead class="text-muted-foreground font-medium border-b bg-muted/40">
                 <tr>
-                  <th class="px-3 py-2 w-8">
+                  <th class="px-3 py-2 text-center w-8">
                     #
                   </th>
                   <th
@@ -519,11 +697,11 @@ async function insertDirectly() {
               </thead>
               <tbody class="divide-border/60 divide-y">
                 <tr
-                  v-for="(row, idx) in generatedRows.slice(0, 5)"
+                  v-for="(row, idx) in finalRows.slice(0, 5)"
                   :key="idx"
                   class="text-[11px] font-mono hover:bg-muted/20"
                 >
-                  <td class="text-muted-foreground px-3 py-2">
+                  <td class="text-muted-foreground px-3 py-2 text-center">
                     {{ idx + 1 }}
                   </td>
                   <td
@@ -543,7 +721,7 @@ async function insertDirectly() {
         <!-- 3. Preview SQL Tab -->
         <div v-else class="space-y-2">
           <div class="text-xs text-muted-foreground flex items-center justify-between">
-            <span>Formatted SQL Batch Query ({{ generatedRows.length }} rows):</span>
+            <span>Formatted SQL Batch Query ({{ finalRows.length }} rows):</span>
             <button
               type="button"
               class="text-xs inline-flex gap-1 items-center hover:text-foreground"
@@ -560,8 +738,14 @@ async function insertDirectly() {
 
       <!-- Modal Footer -->
       <div class="px-5 py-3 border-t bg-muted/20 flex shrink-0 items-center justify-between">
-        <span class="text-xs text-muted-foreground">
-          Ready to seed <strong class="text-foreground">{{ rowCount }}</strong> records into <code class="text-xs font-mono">{{ tableName }}</code>
+        <span class="text-xs text-muted-foreground flex gap-1.5 items-center">
+          Ready to seed <strong class="text-foreground">{{ finalRows.length }}</strong> records into <code class="text-xs font-mono">{{ tableName }}</code>
+          <span
+            v-if="aiRows"
+            class="text-[10px] text-primary font-medium px-1.5 py-0.2 border border-primary/20 rounded bg-primary/10"
+          >
+            AI
+          </span>
         </span>
 
         <div class="flex gap-2 items-center">
