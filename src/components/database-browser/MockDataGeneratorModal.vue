@@ -8,7 +8,6 @@ import {
   Eye,
   FileCode,
   Play,
-  Sparkles,
 } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
@@ -335,23 +334,13 @@ async function insertDirectly() {
   <Dialog :open="open" @update:open="emit('update:open', $event)">
     <DialogContent class="p-0 border rounded-xl bg-background flex flex-col gap-0 max-h-[88vh] max-w-4xl shadow-2xl overflow-hidden">
       <!-- Modal Header -->
-      <div class="px-5 py-3.5 border-b bg-muted/20 flex shrink-0 items-center justify-between">
-        <div class="flex gap-2.5 items-center">
-          <div class="text-primary rounded-lg bg-primary/10 flex shrink-0 h-8 w-8 items-center justify-center">
-            <Sparkles class="h-4 w-4" />
-          </div>
-          <div>
-            <DialogTitle class="text-sm text-foreground font-semibold flex gap-2 items-center">
-              <span>Mock Data Generator</span>
-              <span class="text-xs text-muted-foreground font-mono font-normal px-2 py-0.5 border rounded bg-muted">
-                {{ schema ? `${schema}.${tableName}` : tableName }}
-              </span>
-            </DialogTitle>
-            <p class="text-[12px] text-muted-foreground">
-              Generate realistic synthetic test data tailored to table columns and constraints.
-            </p>
-          </div>
-        </div>
+      <div class="px-5 py-3 border-b bg-muted/20 flex shrink-0 items-center justify-between">
+        <DialogTitle class="text-sm text-foreground font-semibold flex gap-2 items-center">
+          <span>Mock Data Generator</span>
+          <span class="text-xs text-muted-foreground font-mono font-normal px-2 py-0.5 border rounded bg-muted/60">
+            {{ database ? (schema ? `${database}.${schema}.${tableName}` : `${database}.${tableName}`) : (schema ? `${schema}.${tableName}` : tableName) }}
+          </span>
+        </DialogTitle>
 
         <!-- Row Count Presets -->
         <div class="mr-6 flex gap-1.5 items-center">

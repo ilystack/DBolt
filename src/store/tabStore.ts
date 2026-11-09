@@ -222,6 +222,52 @@ export const useTabStore = defineStore('tabs', {
       this.activeTabId = null
     },
 
+    closeOthers(tabId: string) {
+      const target = this.tabs.find(t => t.id === tabId)
+      if (!target)
+        return
+      this.tabs = [target]
+      this.activeTabId = target.id
+    },
+
+    closeToTheRight(tabId: string) {
+      const index = this.tabs.findIndex(t => t.id === tabId)
+      if (index === -1)
+        return
+      this.tabs = this.tabs.slice(0, index + 1)
+      if (!this.tabs.find(t => t.id === this.activeTabId)) {
+        this.activeTabId = tabId
+      }
+    },
+
+    closeSavedTabs() {
+      const remaining = this.tabs.filter(t => t.hasUnsavedChanges)
+      this.tabs = remaining
+      if (this.activeTabId && !remaining.find(t => t.id === this.activeTabId)) {
+        this.activeTabId = remaining[0]?.id ?? null
+      }
+    },
+
+    duplicateTab(tabId: string): QueryTab | undefined {
+      const source = this.tabs.find(t => t.id === tabId)
+      if (!source)
+        return undefined
+      const newTab: QueryTab = {
+        ...source,
+        id: generateId(),
+        name: `${source.name} (copy)`,
+        filePath: undefined,
+        hasUnsavedChanges: false,
+        isExecuting: false,
+      }
+      const index = this.tabs.findIndex(t => t.id === tabId)
+      const nextTabs = [...this.tabs]
+      nextTabs.splice(index + 1, 0, newTab)
+      this.tabs = nextTabs
+      this.activeTabId = newTab.id
+      return newTab
+    },
+
     closeTabsForConnection(connectionId: string) {
       const remaining = this.tabs.filter(t => t.connectionId !== connectionId)
       this.tabs = remaining

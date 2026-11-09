@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { QueryTab } from '@/store/tabStore'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   AlertDialog,
@@ -13,7 +13,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { toast } from '@/composables/useNotifications'
 import { useConnectionStore } from '@/store'
+import { useTabStore } from '@/store/tabStore'
 import DbTypeIcon from './DbTypeIcon.vue'
 
 type Props = {
@@ -101,6 +110,126 @@ function handleNewTab() {
   emit('new')
 }
 
+const tabStore = useTabStore()
+
+// ── Context Menu ─────────────────────────────────────────────────────────────
+const contextMenu = ref<{
+  show: boolean
+  x: number
+  y: number
+  tab: QueryTab | null
+}>({
+  show: false,
+  x: 0,
+  y: 0,
+  tab: null,
+})
+
+function closeContextMenu() {
+  contextMenu.value.show = false
+  contextMenu.value.tab = null
+}
+
+function openContextMenu(event: MouseEvent, tab: QueryTab) {
+  event.preventDefault()
+  event.stopPropagation()
+  contextMenu.value = {
+    show: true,
+    x: Math.min(event.clientX, window.innerWidth - 220),
+    y: Math.min(event.clientY, window.innerHeight - 300),
+    tab,
+  }
+}
+
+function handleWindowClick() {
+  if (contextMenu.value.show) {
+    closeContextMenu()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('click', handleWindowClick)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', handleWindowClick)
+})
+
+const isLastTab = (tab: QueryTab | null) => {
+  if (!tab || props.tabs.length === 0)
+    return true
+  return props.tabs[props.tabs.length - 1]?.id === tab.id
+}
+
+async function handleContextAction(action: 'close' | 'closeOthers' | 'closeRight' | 'closeSaved' | 'closeAll' | 'duplicate' | 'copyName') {
+  const target = contextMenu.value.tab
+  closeContextMenu()
+  if (!target)
+    return
+
+  switch (action) {
+    case 'close':
+      handleCloseClick(new MouseEvent('click'), target)
+      break
+    case 'closeOthers': {
+      const others = props.tabs.filter(t => t.id !== target.id)
+      const dirty = others.some(t => t.hasUnsavedChanges)
+      if (dirty) {
+        tabStore.tabs = props.tabs.filter(t => t.id === target.id || t.hasUnsavedChanges)
+        if (!tabStore.tabs.find(t => t.id === tabStore.activeTabId)) {
+          tabStore.activeTabId = target.id
+        }
+      }
+      else {
+        tabStore.closeOthers(target.id)
+      }
+      break
+    }
+    case 'closeRight': {
+      const idx = props.tabs.findIndex(t => t.id === target.id)
+      if (idx !== -1) {
+        const rightTabs = props.tabs.slice(idx + 1)
+        const dirty = rightTabs.some(t => t.hasUnsavedChanges)
+        if (dirty) {
+          tabStore.tabs = props.tabs.filter((t, i) => i <= idx || t.hasUnsavedChanges)
+          if (!tabStore.tabs.find(t => t.id === tabStore.activeTabId)) {
+            tabStore.activeTabId = target.id
+          }
+        }
+        else {
+          tabStore.closeToTheRight(target.id)
+        }
+      }
+      break
+    }
+    case 'closeSaved':
+      tabStore.closeSavedTabs()
+      break
+    case 'closeAll': {
+      const dirty = props.tabs.some(t => t.hasUnsavedChanges)
+      if (dirty) {
+        tabStore.closeSavedTabs()
+      }
+      else {
+        tabStore.closeAllTabs()
+      }
+      break
+    }
+    case 'duplicate':
+      tabStore.duplicateTab(target.id)
+      break
+    case 'copyName':
+      try {
+        await navigator.clipboard.writeText(target.name)
+        toast.success(`Copied: ${target.name}`)
+      }
+      catch {
+        // clipboard unavailable
+      }
+      break
+  }
+}
+
 const isActiveTab = (tabId: string) => props.activeTabId === tabId
 </script>
 
@@ -118,6 +247,7 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
           'opacity-60': isOrphanTab(tab),
         }"
         @click="handleTabClick(tab.id)"
+        @contextmenu.prevent.stop="openContextMenu($event, tab)"
       >
         <!-- Orphan warning icon -->
         <svg
@@ -274,6 +404,80 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    <!-- Tab Context Menu -->
+    <Teleport to="body">
+      <div
+        v-if="contextMenu.show"
+        class="fixed z-50"
+        :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <DropdownMenu :open="true">
+          <DropdownMenuTrigger class="sr-only" />
+          <DropdownMenuContent
+            align="start"
+            class="text-xs py-1 border border-border bg-popover min-w-48 shadow-xl"
+            @keydown.escape="closeContextMenu"
+          >
+            <!-- Close -->
+            <DropdownMenuItem class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between" @click="handleContextAction('close')">
+              <span>{{ t('components.queryTabs.contextMenu.close') }}</span>
+              <span class="text-[10px] text-muted-foreground font-mono">Ctrl+W</span>
+            </DropdownMenuItem>
+
+            <!-- Close Others -->
+            <DropdownMenuItem
+              :disabled="tabs.length <= 1"
+              class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between"
+              @click="handleContextAction('closeOthers')"
+            >
+              <span>{{ t('components.queryTabs.contextMenu.closeOthers') }}</span>
+            </DropdownMenuItem>
+
+            <!-- Close to the Right -->
+            <DropdownMenuItem
+              :disabled="isLastTab(contextMenu.tab)"
+              class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between"
+              @click="handleContextAction('closeRight')"
+            >
+              <span>{{ t('components.queryTabs.contextMenu.closeRight') }}</span>
+            </DropdownMenuItem>
+
+            <!-- Close Saved -->
+            <DropdownMenuItem
+              class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between"
+              @click="handleContextAction('closeSaved')"
+            >
+              <span>{{ t('components.queryTabs.contextMenu.closeSaved') }}</span>
+            </DropdownMenuItem>
+
+            <!-- Close All -->
+            <DropdownMenuItem class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between" @click="handleContextAction('closeAll')">
+              <span>{{ t('components.queryTabs.contextMenu.closeAll') }}</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator class="my-1 border-border/50" />
+
+            <!-- Duplicate Tab -->
+            <DropdownMenuItem class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between" @click="handleContextAction('duplicate')">
+              <div class="flex gap-2 items-center">
+                <span class="i-carbon-copy text-muted-foreground h-3.5 w-3.5" />
+                <span>{{ t('components.queryTabs.contextMenu.duplicate') }}</span>
+              </div>
+            </DropdownMenuItem>
+
+            <!-- Copy Name -->
+            <DropdownMenuItem class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between" @click="handleContextAction('copyName')">
+              <div class="flex gap-2 items-center">
+                <span class="i-carbon-tag text-muted-foreground h-3.5 w-3.5" />
+                <span>{{ t('components.queryTabs.contextMenu.copyName') }}</span>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </Teleport>
   </div>
 </template>
 

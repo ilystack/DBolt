@@ -1695,6 +1695,15 @@ export const enUS = {
       unsaved: 'Unsaved changes',
       orphan: 'This tab belongs to a different connection',
       new: 'New query',
+      contextMenu: {
+        close: 'Close',
+        closeOthers: 'Close Others',
+        closeRight: 'Close to the Right',
+        closeSaved: 'Close Saved',
+        closeAll: 'Close All',
+        duplicate: 'Duplicate Tab',
+        copyName: 'Copy Query Name',
+      },
       closeDialog: {
         title: 'Unsaved Changes',
         message: 'The query "{name}" has unsaved changes. Do you want to discard them?',

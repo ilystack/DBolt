@@ -1638,6 +1638,15 @@ export const zhCN = {
       unsaved: '未保存的更改',
       orphan: '此标签页属于其他连接',
       new: '新建查询',
+      contextMenu: {
+        close: '关闭',
+        closeOthers: '关闭其他',
+        closeRight: '关闭右侧标签页',
+        closeSaved: '关闭未修改标签页',
+        closeAll: '关闭所有',
+        duplicate: '复制标签页',
+        copyName: '复制查询名称',
+      },
       closeDialog: {
         title: '未保存的更改',
         message: '查询"{name}"有未保存的更改。是否要放弃它们？',
