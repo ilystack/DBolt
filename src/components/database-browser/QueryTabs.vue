@@ -105,9 +105,9 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
 </script>
 
 <template>
-  <div class="query-tabs border-b border-border bg-chrome flex items-stretch overflow-x-auto">
+  <div class="query-tabs border-b border-border bg-chrome flex items-center overflow-x-auto">
     <!-- Tabs -->
-    <div class="flex flex-1 min-w-0 items-stretch">
+    <div class="flex shrink-0 h-full items-stretch">
       <div
         v-for="tab in tabs"
         :key="tab.id"
@@ -240,15 +240,18 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
     </div>
 
     <!-- New tab button -->
-    <Button
-      variant="ghost"
-      size="icon"
-      class="text-muted-foreground shrink-0 h-7 w-7 hover:text-foreground"
-      :title="t('components.queryTabs.new')"
-      @click="handleNewTab"
-    >
-      <span class="i-lucide-plus shrink-0 h-3.5 w-3.5" />
-    </Button>
+    <div class="px-2 flex shrink-0 items-center">
+      <Button
+        variant="ghost"
+        size="sm"
+        class="text-xs text-muted-foreground font-medium px-2.5 border border-border/60 rounded gap-1.5 h-6.5 shadow-none transition-colors hover:text-foreground hover:border-border hover:bg-muted/60"
+        :title="t('components.queryTabs.new')"
+        @click="handleNewTab"
+      >
+        <span class="i-lucide-plus shrink-0 h-3.5 w-3.5" />
+        <span class="whitespace-nowrap">{{ t('components.queryTabs.new') }}</span>
+      </Button>
+    </div>
 
     <!-- Unsaved changes dialog -->
     <AlertDialog v-model:open="showCloseDialog">

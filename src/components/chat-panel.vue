@@ -350,7 +350,7 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Error banner -->
-            <div v-if="error" class="text-sm text-destructive-text mb-2 p-3 border border-destructive/20 rounded-lg bg-destructive/10 flex gap-2 items-start">
+            <div v-if="error" class="text-sm text-destructive-text mb-2 p-3 border border-destructive/20 rounded-lg bg-destructive/10 flex gap-2 max-w-[85%] w-fit items-start self-start">
               <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
               <span class="flex-1 min-w-0">{{ error }}</span>
               <button
