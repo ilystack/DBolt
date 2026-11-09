@@ -313,51 +313,53 @@ onBeforeUnmount(() => {
       <!-- Messages area -->
       <div class="flex-1 min-h-0 w-full">
         <ScrollArea ref="scrollAreaRef" class="h-full w-full">
-          <!-- Empty state -->
-          <div v-if="messages.length === 0 && !isLoading" class="px-4 text-center flex flex-col h-full w-full select-none items-center justify-center">
-            <Bot class="text-muted-foreground mb-3 h-16 w-16 stroke-[1.5]" />
-            <h2 class="text-xl text-foreground tracking-tight font-medium mb-1">
-              What I can do for you?
-            </h2>
-            <p class="text-xs text-muted-foreground max-w-sm">
-              <slot name="empty">
-                {{ emptyHint || t('dataStudio.agent.emptyState') }}
-              </slot>
-            </p>
-          </div>
+          <div class="px-4 py-4 flex flex-col min-h-full justify-start">
+            <!-- Empty state -->
+            <div v-if="messages.length === 0 && !isLoading" class="px-4 py-12 text-center flex flex-1 flex-col w-full select-none items-center justify-center">
+              <Bot class="text-muted-foreground mb-3 h-16 w-16 stroke-[1.5]" />
+              <h2 class="text-xl text-foreground tracking-tight font-medium mb-1">
+                What I can do for you?
+              </h2>
+              <p class="text-xs text-muted-foreground max-w-sm">
+                <slot name="empty">
+                  {{ emptyHint || t('dataStudio.agent.emptyState') }}
+                </slot>
+              </p>
+            </div>
 
-          <!-- Message bubbles -->
-          <AgentMessageBubble
-            v-for="(msg, index) in messages"
-            :key="msg.id"
-            :message="msg"
-            :iteration-index="iterationIndexMap[msg.id]"
-            :can-retry="!recoveryBusy"
-            :historical="index < currentTurnStart"
-            @review-permissions="reviewingTool = $event"
-            @retry-tool-call="retryToolCall"
-          />
-
-          <!-- Tool confirmation cards -->
-          <div v-for="msg in messages" :key="`conf-${msg.id}`">
-            <ToolConfirmationCard
-              v-for="tc in ((msg as any).toolCalls?.filter((tc: any) => tc.requiresConfirmation && tc.status === 'pending') ?? [])"
-              :key="tc.id"
-              :tool-call="tc"
-              @confirm="emit('confirmToolCall', msg.id, $event)"
+            <!-- Message bubbles -->
+            <AgentMessageBubble
+              v-for="(msg, index) in messages"
+              :key="msg.id"
+              :message="msg"
+              :iteration-index="iterationIndexMap[msg.id]"
+              :can-retry="!recoveryBusy"
+              :historical="index < currentTurnStart"
+              @review-permissions="reviewingTool = $event"
+              @retry-tool-call="retryToolCall"
             />
-          </div>
 
-          <!-- Error banner -->
-          <div v-if="error" class="text-sm text-destructive-text mx-4 mb-2 p-3 border border-destructive/20 rounded-lg bg-destructive/10 flex gap-2 items-start">
-            <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
-            <span class="flex-1 min-w-0">{{ error }}</span>
-            <button
-              class="text-destructive-text p-0.5 rounded shrink-0 transition-colors hover:text-destructive-text"
-              @click="emit('dismissError')"
-            >
-              <span class="i-carbon-close h-3.5 w-3.5" />
-            </button>
+            <!-- Tool confirmation cards -->
+            <div v-for="msg in messages" :key="`conf-${msg.id}`">
+              <ToolConfirmationCard
+                v-for="tc in ((msg as any).toolCalls?.filter((tc: any) => tc.requiresConfirmation && tc.status === 'pending') ?? [])"
+                :key="tc.id"
+                :tool-call="tc"
+                @confirm="emit('confirmToolCall', msg.id, $event)"
+              />
+            </div>
+
+            <!-- Error banner -->
+            <div v-if="error" class="text-sm text-destructive-text mb-2 p-3 border border-destructive/20 rounded-lg bg-destructive/10 flex gap-2 items-start">
+              <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
+              <span class="flex-1 min-w-0">{{ error }}</span>
+              <button
+                class="text-destructive-text p-0.5 rounded shrink-0 transition-colors hover:text-destructive-text"
+                @click="emit('dismissError')"
+              >
+                <span class="i-carbon-close h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </ScrollArea>
       </div>

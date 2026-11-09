@@ -25,17 +25,28 @@ const sortedSessions = computed(() =>
 )
 
 function sessionLabel(session: AgentSession): string {
-  if (session.title && session.title !== t('dataStudio.history.newSession'))
-    return session.title
+  const customTitle = session.title?.trim()
+  const defaultPlaceholders = new Set([
+    'New Chat',
+    'New Session',
+    'AI Assistant',
+    t('dataStudio.history.newSession'),
+  ])
+
+  if (customTitle && !defaultPlaceholders.has(customTitle))
+    return customTitle
+
   const sourceLabel = session.sources
     .filter(source => !source.detached)
     .map(source => source.alias)
     .join(', ')
   if (sourceLabel)
     return sourceLabel
-  const firstUser = session.messages.find(m => m.role === 'user')
+
+  const firstUser = session.messages.find(m => m.role === 'user' && m.content?.trim())
   if (firstUser?.content) {
-    return firstUser.content.length > 40 ? `${firstUser.content.slice(0, 40)}…` : firstUser.content
+    const singleLine = firstUser.content.replace(/\s+/g, ' ').trim()
+    return singleLine.length > 40 ? `${singleLine.slice(0, 40)}…` : singleLine
   }
   return session.title || t('dataStudio.history.newSession')
 }

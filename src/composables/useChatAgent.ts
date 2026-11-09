@@ -416,6 +416,16 @@ export function useChatAgent(config: UseChatAgentConfig) {
     localError.value = undefined
 
     try {
+      const { useAppStore } = await import('@/store/appStore')
+      const appStore = useAppStore()
+      try {
+        await appStore.getFeatureModelConfig(config.feature)
+      }
+      catch (err) {
+        localError.value = err instanceof Error ? err.message : String(err)
+        return
+      }
+
       const sessionId = await config.sessionStore.getOrCreateSession()
       dataStudioStore.clearSessionError(sessionId)
 
@@ -455,16 +465,6 @@ export function useChatAgent(config: UseChatAgentConfig) {
           tools: toolsResponse.tools,
           toolMetadata: toolsResponse.metadata,
         },
-      }
-
-      const { useAppStore } = await import('@/store/appStore')
-      const appStore = useAppStore()
-      try {
-        await appStore.getFeatureModelConfig(config.feature)
-      }
-      catch (err) {
-        localError.value = err instanceof Error ? err.message : String(err)
-        return
       }
 
       const aiContext = await agentApi.getAiContext(sessionId, connections, config.feature)

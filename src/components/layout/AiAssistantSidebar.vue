@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ChatPanel from '@/components/chat-panel.vue'
 import { useSidebarChatAgent } from '@/composables/useSidebarChatAgent'
@@ -33,6 +33,28 @@ const {
   stopMessage,
   progress,
 } = useSidebarChatAgent()
+
+const displaySessionTitle = computed(() => {
+  const customTitle = activeSession.value?.title?.trim()
+  const defaultPlaceholders = new Set([
+    'New Chat',
+    'New Session',
+    'AI Assistant',
+    t('dataStudio.history.newSession'),
+  ])
+
+  if (customTitle && !defaultPlaceholders.has(customTitle)) {
+    return customTitle
+  }
+
+  const firstUser = messages.value.find(m => m.role === 'user' && m.content?.trim())
+  if (firstUser?.content) {
+    const singleLine = firstUser.content.replace(/\s+/g, ' ').trim()
+    return singleLine.length > 30 ? `${singleLine.slice(0, 30)}…` : singleLine
+  }
+
+  return t('dataStudio.history.newSession')
+})
 
 function handleConfirmation(msgId: string, event: { toolCallId: string, action: 'allow_once' | 'allow_always' | 'deny' | 'deny_always' | 'cancel' }) {
   rawHandleConfirmation(msgId, event.toolCallId, event.action)
@@ -137,8 +159,8 @@ onUnmounted(() => {
     >
       <template #header>
         <div class="header-row">
-          <span class="header-title">
-            {{ $t('aside.aiAssistant') }}
+          <span class="header-title truncate" :title="displaySessionTitle">
+            {{ displaySessionTitle }}
           </span>
           <div class="header-actions">
             <button

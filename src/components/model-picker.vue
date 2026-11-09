@@ -77,10 +77,6 @@ const selectedLabel = computed(() => {
   return flattenedModels.value[0]?.label ?? 'Select model'
 })
 
-function providerLabel(providerConfigId: string) {
-  return props.groups.find(group => group.id === providerConfigId)?.label ?? ''
-}
-
 function selectModel(value: string) {
   emit('update:modelValue', value)
   open.value = false
@@ -102,35 +98,7 @@ function selectModel(value: string) {
         </div>
 
         <div class="model-picker-list">
-          <div v-if="recentModels.length > 0" class="model-picker-section">
-            <p class="model-picker-heading">
-              Recent
-            </p>
-            <button
-              v-for="model in recentModels"
-              :key="`recent-${model.id}`"
-              class="model-picker-row"
-              :class="{ selected: model.id === modelValue }"
-              @click="selectModel(model.id)"
-            >
-              <div class="model-picker-main">
-                <span class="model-picker-dot" :class="{ active: model.id === modelValue }" />
-                <span class="model-picker-name">{{ model.label }}</span>
-                <span class="model-picker-provider">
-                  {{ providerLabel(model.providerConfigId) }}
-                </span>
-              </div>
-              <span
-                v-if="model.id === modelValue"
-                class="model-picker-checkmark i-carbon-checkmark shrink-0 h-4 w-4"
-              />
-            </button>
-          </div>
-
           <div v-for="group in props.groups" :key="group.id" class="model-picker-section">
-            <p class="model-picker-heading">
-              {{ group.label }}
-            </p>
             <button
               v-for="model in group.models"
               :key="model.id"
@@ -139,6 +107,7 @@ function selectModel(value: string) {
               @click="selectModel(model.id)"
             >
               <div class="model-picker-main">
+                <span class="model-picker-dot" :class="{ active: model.id === modelValue }" />
                 <span class="model-picker-name">{{ model.label }}</span>
                 <span v-if="model.category" class="model-picker-meta">{{ model.category }}</span>
               </div>

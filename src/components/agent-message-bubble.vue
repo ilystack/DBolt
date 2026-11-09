@@ -525,8 +525,8 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 100%;
-  max-width: 100%;
+  width: fit-content;
+  max-width: 85%;
   min-width: 0;
 }
 
@@ -548,6 +548,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
   background: hsl(var(--muted));
   color: hsl(var(--foreground));
   border-bottom-left-radius: 4px;
+  width: fit-content;
   max-width: 100%;
 }
 
