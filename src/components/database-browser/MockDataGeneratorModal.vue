@@ -175,6 +175,7 @@ function formatSqlLiteral(val: string | number | boolean | null): string {
 }
 
 const activeColumns = computed(() => columns.value.filter(c => c.included))
+const isAllSelected = computed(() => columns.value.length > 0 && columns.value.every(c => c.included))
 
 const finalRows = computed(() => {
   if (aiRows.value && aiRows.value.length > 0) {
@@ -536,18 +537,20 @@ async function insertDirectly() {
             <span>
               Columns included in AI prompt context.
             </span>
-            <div class="flex gap-2">
+            <div class="flex gap-2 items-center">
               <button
                 type="button"
-                class="hover:text-foreground text-primary/80 transition-colors"
+                class="transition-colors"
+                :class="!isAllSelected ? 'text-primary font-semibold hover:underline' : 'text-muted-foreground hover:text-foreground font-normal'"
                 @click="columns.forEach(c => c.included = true)"
               >
                 Select All
               </button>
-              <span>&middot;</span>
+              <span class="text-muted-foreground/60">&middot;</span>
               <button
                 type="button"
-                class="hover:text-foreground text-muted-foreground transition-colors"
+                class="transition-colors"
+                :class="isAllSelected ? 'text-primary font-semibold hover:underline' : 'text-muted-foreground hover:text-foreground font-normal'"
                 @click="columns.forEach(c => c.included = false)"
               >
                 Deselect All
