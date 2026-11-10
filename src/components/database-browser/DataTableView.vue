@@ -98,7 +98,6 @@ const activeSubPageCountLabel = computed(() => {
   }
 })
 
-const filterInput = ref('')
 const appliedFilter = ref('')
 const hiddenColumns = ref<Set<string>>(new Set())
 const showColumnMenu = ref(false)
@@ -390,21 +389,6 @@ async function fetchColumnInfo() {
   }
 }
 
-function applyFilter() {
-  resolveAppliedFilter()
-  currentPage.value = 1
-  refresh()
-}
-
-function clearFilter() {
-  filterInput.value = ''
-  if (appliedFilter.value !== '') {
-    appliedFilter.value = ''
-    currentPage.value = 1
-    refresh()
-  }
-}
-
 // ── Search handlers ──
 
 /** Called whenever `searchTerm` changes — debounces 300ms then invokes backend. */
@@ -441,23 +425,10 @@ function onSearchInput() {
 }
 
 /**
- * Resolve `appliedFilter` from search and/or manual filter.
- *
- * Priority: search filter overrides manual filter when search is active.
+ * Resolve `appliedFilter` from search.
  */
 function resolveAppliedFilter() {
-  if (searchTerm.value.trim() && searchFilter.value) {
-    // Combine: search AND manual filter (or just search if no manual filter)
-    const manual = filterInput.value.trim()
-    if (manual)
-      appliedFilter.value = `${searchFilter.value} AND (${manual})`
-    else
-      appliedFilter.value = searchFilter.value
-  }
-  else {
-    // No search active — use manual filter only
-    appliedFilter.value = filterInput.value.trim() || ''
-  }
+  appliedFilter.value = (searchTerm.value.trim() && searchFilter.value) ? searchFilter.value : ''
 }
 
 function clearSearch() {
@@ -870,7 +841,6 @@ watch(
   async ([newConnId, _newDatabase, _newTable, _newSchema], [oldConnId]) => {
     currentPage.value = 1
     appliedFilter.value = ''
-    filterInput.value = ''
     searchTerm.value = ''
     searchFilter.value = null
     cancelPending()
@@ -945,26 +915,6 @@ watch(
             class="text-muted-foreground rounded flex h-5 w-5 items-center right-1 top-1/2 justify-center absolute hover:bg-accent -translate-y-1/2"
             :title="t('components.dataTableView.clearSearch')"
             @click.stop="clearSearch"
-          >
-            <span class="i-carbon-close h-3 w-3" />
-          </button>
-        </div>
-
-        <!-- Filter input -->
-        <div class="flex-1 min-w-0 relative">
-          <span class="i-carbon-filter text-muted-foreground h-3.5 w-3.5 pointer-events-none left-2 top-1/2 absolute -translate-y-1/2" />
-          <Input
-            v-model="filterInput"
-            :placeholder="t('components.dataTableView.filterPlaceholder')"
-            class="text-xs font-mono pl-7 h-7"
-            @keydown.enter="applyFilter"
-          />
-          <!-- Clear filter button (inside input, on the right) -->
-          <button
-            v-if="filterInput || appliedFilter"
-            class="text-muted-foreground rounded flex h-5 w-5 items-center right-1 top-1/2 justify-center absolute hover:bg-accent -translate-y-1/2"
-            :title="t('components.dataTableView.clearFilter')"
-            @click.stop="clearFilter"
           >
             <span class="i-carbon-close h-3 w-3" />
           </button>
@@ -1052,15 +1002,6 @@ watch(
         >
           <span class="i-carbon-magic-wand text-primary h-3.5 w-3.5" />
           <span>Mock Data</span>
-        </Button>
-
-        <!-- Apply Filters button -->
-        <Button
-          size="sm"
-          class="text-xs flex-shrink-0 h-7"
-          @click.stop="applyFilter"
-        >
-          {{ t('components.dataTableView.applyFilters') }}
         </Button>
       </div>
 
