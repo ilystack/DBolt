@@ -17,6 +17,10 @@ export default defineConfig({
         'carbon': () => import('@iconify-json/carbon/icons.json').then(i => i.default as Record<string, unknown>),
         'lucide': () => import('@iconify-json/lucide/icons.json').then(i => i.default as Record<string, unknown>),
         'simple-icons': () => import('@iconify-json/simple-icons/icons.json').then(i => i.default as Record<string, unknown>),
+        'ant-design': async () => {
+          const { readFileSync } = await import('node:fs')
+          return JSON.parse(readFileSync(new URL('./node_modules/@iconify/json/json/ant-design.json', import.meta.url), 'utf-8'))
+        },
       },
     }),
     presetAnimations(),

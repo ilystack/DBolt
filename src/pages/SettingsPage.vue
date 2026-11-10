@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Globe, Laptop, Languages } from 'lucide-vue-next'
+import { Globe, Laptop, Languages } from 'lucide-vue-next'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -299,7 +299,7 @@ function handleApply() {
               class="text-xs text-muted-foreground flex gap-1.5 items-center"
               role="status"
             >
-              <span class="i-lucide-circle-check text-success h-3.5 w-3.5" aria-hidden="true" />
+              <span class="i-ant-design-check-circle-twotone text-success h-4 w-4" aria-hidden="true" />
               {{ t('pages.settings.feedback.saved') }}
             </span>
           </div>
@@ -341,13 +341,13 @@ function handleApply() {
                     <button
                       v-for="opt in themeOptions"
                       :key="opt.value"
-                      class="p-2 border-2 rounded-lg cursor-pointer transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      class="p-2 border rounded-lg cursor-pointer transition-colors relative focus:outline-none focus-visible:ring-1 focus-visible:ring-ring text-left"
                       :class="draftTheme === opt.value
-                        ? 'border-primary'
-                        : 'border-border hover:border-muted-foreground'"
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                        : 'border-border hover:border-muted-foreground/60 bg-card'"
                       @click="handleThemeChange(opt.value)"
                     >
-                      <div class="mb-2 rounded flex h-24 overflow-hidden">
+                      <div class="mb-2 rounded flex h-24 overflow-hidden relative">
                         <div
                           v-for="mode in opt.value === ThemeType.AUTO ? [ThemeType.DARK, ThemeType.LIGHT] : [opt.value]"
                           :key="mode"
@@ -365,15 +365,17 @@ function handleApply() {
                             <div class="rounded bg-muted h-2 w-5/6" />
                           </div>
                         </div>
+
+                        <!-- Active state: icon ant-design:check-circle-twotone besar di tengah preview tanpa background luar -->
+                        <div
+                          v-if="draftTheme === opt.value"
+                          class="inset-0 absolute flex items-center justify-center pointer-events-none"
+                        >
+                          <span class="i-ant-design-check-circle-twotone h-12 w-12 text-primary drop-shadow" />
+                        </div>
                       </div>
-                      <!-- Selected checkmark -->
-                      <div
-                        v-if="draftTheme === opt.value"
-                        class="rounded-full bg-primary flex h-5 w-5 items-center right-2 top-2 justify-center absolute"
-                      >
-                        <span class="i-carbon-checkmark text-primary-foreground h-3 w-3" />
-                      </div>
-                      <p class="text-sm font-medium text-center">
+
+                      <p class="text-xs font-medium text-center" :class="draftTheme === opt.value ? 'text-primary font-semibold' : 'text-foreground'">
                         {{ opt.label() }}
                       </p>
                     </button>
@@ -397,25 +399,29 @@ function handleApply() {
                       v-for="opt in languageOptions"
                       :key="opt.value"
                       type="button"
-                      class="p-3.5 border-2 rounded-lg cursor-pointer transition-colors relative flex flex-col justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-ring text-left"
+                      class="p-4 border rounded-lg cursor-pointer transition-colors relative flex flex-col items-center justify-center text-center min-h-[120px] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       :class="draftLanguage === opt.value
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-muted-foreground bg-card'"
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                        : 'border-border hover:border-muted-foreground/60 bg-card'"
                       @click="handleLanguageChange(opt.value)"
                     >
-                      <div class="flex items-start justify-between w-full">
-                        <div class="flex items-center gap-2">
-                          <component :is="opt.iconComponent" class="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span class="text-sm font-medium">{{ opt.label() }}</span>
-                        </div>
-                        <div
+                      <!-- Center icon: besar dan tanpa background luar saat aktif -->
+                      <div class="mb-2 flex items-center justify-center">
+                        <span
                           v-if="draftLanguage === opt.value"
-                          class="rounded-full bg-primary flex h-4 w-4 items-center justify-center shrink-0"
-                        >
-                          <Check class="h-2.5 w-2.5 text-primary-foreground stroke-[3]" />
-                        </div>
+                          class="i-ant-design-check-circle-twotone h-10 w-10 text-primary"
+                        />
+                        <component
+                          :is="opt.iconComponent"
+                          v-else
+                          class="h-7 w-7 text-muted-foreground"
+                        />
                       </div>
-                      <p class="text-xs text-muted-foreground mt-2">
+
+                      <p class="text-sm font-medium" :class="draftLanguage === opt.value ? 'text-primary font-semibold' : 'text-foreground'">
+                        {{ opt.label() }}
+                      </p>
+                      <p class="text-xs text-muted-foreground mt-0.5">
                         {{ opt.desc }}
                       </p>
                     </button>

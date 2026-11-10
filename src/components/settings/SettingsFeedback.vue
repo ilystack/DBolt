@@ -20,7 +20,7 @@ const percent = computed(() => props.progress == null || !Number.isFinite(props.
       <div class="flex gap-2 min-w-0 items-start" :role="state === 'error' ? 'alert' : 'status'" aria-atomic="true">
         <span
           class="mt-0.5 shrink-0 h-4 w-4"
-          :class="state === 'pending' ? 'i-lucide-loader-circle settings-spinner' : state === 'error' ? 'i-lucide-circle-alert' : 'i-lucide-circle-check'"
+          :class="state === 'pending' ? 'i-lucide-loader-circle settings-spinner' : state === 'error' ? 'i-lucide-circle-alert' : 'i-ant-design-check-circle-twotone'"
           aria-hidden="true"
         />
         <div class="flex-1 min-w-0">
