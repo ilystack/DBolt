@@ -10,7 +10,6 @@ import {
   Database,
   Eye,
   FileCode,
-  Layers,
   Play,
   RefreshCw,
   Sparkles,
@@ -42,25 +41,6 @@ const emit = defineEmits<{
 
 const tabStore = useTabStore()
 
-type GeneratorType
-  = 'auto_increment'
-    | 'uuid'
-    | 'full_name'
-    | 'first_name'
-    | 'last_name'
-    | 'email'
-    | 'phone'
-    | 'timestamp'
-    | 'date'
-    | 'status'
-    | 'price'
-    | 'integer'
-    | 'boolean'
-    | 'city'
-    | 'country'
-    | 'sentence'
-    | 'null'
-
 type ColumnConfig = {
   name: string
   dataType: string
@@ -68,7 +48,6 @@ type ColumnConfig = {
   isPrimaryKey: boolean
   isAutoIncrement: boolean
   included: boolean
-  generator: GeneratorType
 }
 
 type AiStep = 'idle' | 'analyzing' | 'prompting' | 'parsing' | 'done' | 'error'
@@ -77,10 +56,8 @@ const loading = ref(false)
 const executing = ref(false)
 const rowCount = ref<number>(25)
 const activeTab = ref<'columns' | 'preview_table' | 'preview_sql'>('columns')
-const generatorMode = ref<'ai' | 'rule'>('ai')
 const columns = ref<ColumnConfig[]>([])
 const copied = ref(false)
-const openDropdownCol = ref<string | null>(null)
 const openModelDropdown = ref(false)
 
 // AI State
@@ -144,68 +121,6 @@ async function onModelChange(modelId: string) {
   }
 }
 
-const generatorOptions: { value: GeneratorType, label: string }[] = [
-  { value: 'uuid', label: 'UUID (v4)' },
-  { value: 'full_name', label: 'Full Name' },
-  { value: 'first_name', label: 'First Name' },
-  { value: 'last_name', label: 'Last Name' },
-  { value: 'email', label: 'Email Address' },
-  { value: 'phone', label: 'Phone Number' },
-  { value: 'status', label: 'Status / Enum' },
-  { value: 'timestamp', label: 'Timestamp (Recent)' },
-  { value: 'date', label: 'Date (YYYY-MM-DD)' },
-  { value: 'price', label: 'Price / Currency' },
-  { value: 'integer', label: 'Random Integer' },
-  { value: 'boolean', label: 'Boolean (true/false)' },
-  { value: 'city', label: 'City' },
-  { value: 'country', label: 'Country' },
-  { value: 'sentence', label: 'Description / Text' },
-  { value: 'auto_increment', label: 'Sequence (1, 2, 3...)' },
-  { value: 'null', label: 'NULL' },
-]
-
-function inferGenerator(col: ColumnInfo): GeneratorType {
-  const name = col.name.toLowerCase()
-  const type = col.data_type.toLowerCase()
-
-  if (col.is_auto_increment)
-    return 'auto_increment'
-  if (name.includes('uuid') || name.includes('guid') || type.includes('uuid'))
-    return 'uuid'
-  if (name.includes('email') || name.includes('mail'))
-    return 'email'
-  if (name === 'first_name' || name === 'firstname')
-    return 'first_name'
-  if (name === 'last_name' || name === 'lastname')
-    return 'last_name'
-  if (name.includes('name') || name.includes('user') || name.includes('author') || name.includes('customer') || name.includes('peminjam') || name.includes('pengarang') || name.includes('member'))
-    return 'full_name'
-  if (name.includes('phone') || name.includes('mobile') || name.includes('tel') || name.includes('hp'))
-    return 'phone'
-  if (name.includes('status') || name.includes('state') || name.includes('role'))
-    return 'status'
-  if (name.includes('price') || name.includes('amount') || name.includes('total') || name.includes('cost') || name.includes('balance') || name.includes('salary') || name.includes('harga') || name.includes('tarif'))
-    return 'price'
-  if (name.includes('created') || name.includes('updated') || name.includes('timestamp') || type.includes('timestamp') || type.includes('datetime'))
-    return 'timestamp'
-  if (name.includes('date') || type.includes('date') || name.includes('tanggal') || name.includes('tgl'))
-    return 'date'
-  if (name.startsWith('is_') || name.startsWith('has_') || name === 'active' || name === 'enabled' || type.includes('bool'))
-    return 'boolean'
-  if (name.includes('city') || name.includes('town') || name.includes('kota'))
-    return 'city'
-  if (name.includes('country') || name.includes('nation') || name.includes('negara'))
-    return 'country'
-  if (name.includes('desc') || name.includes('bio') || name.includes('comment') || name.includes('note') || name.includes('content') || name.includes('body') || name.includes('keterangan') || name.includes('judul'))
-    return 'sentence'
-  if (type.includes('int') || type.includes('serial'))
-    return 'integer'
-  if (type.includes('decimal') || type.includes('numeric') || type.includes('float') || type.includes('double'))
-    return 'price'
-
-  return 'sentence'
-}
-
 async function loadTableColumns() {
   if (!props.open || !props.tableName)
     return
@@ -225,7 +140,6 @@ async function loadTableColumns() {
       isPrimaryKey: c.is_primary_key,
       isAutoIncrement: c.is_auto_increment,
       included: !c.is_auto_increment,
-      generator: inferGenerator(c),
     }))
   }
   catch (err) {
@@ -244,79 +158,11 @@ watch(() => props.open, (isOpen) => {
     aiStep.value = 'idle'
     rawAiContent.value = ''
     showRawAiResponse.value = false
-    generatorMode.value = 'ai'
     activeTab.value = 'columns'
     loadTableColumns()
     syncModels()
   }
 })
-
-// Rule-based mock data generator pools
-const FIRST_NAMES = ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Sam', 'Chris', 'Elena', 'Lucas', 'Maya', 'Liam', 'Budi', 'Siti', 'Rian', 'Dewi', 'Andi', 'Putri']
-const LAST_NAMES = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Santoso', 'Pratama', 'Kusuma', 'Wijaya', 'Siregar', 'Hidayat', 'Saputra']
-const DOMAINS = ['example.com', 'testcorp.io', 'hyperdb.org', 'devstack.net', 'cloudpulse.app', 'dbolt.io']
-const STATUSES = ['active', 'pending', 'completed', 'inactive', 'dipinjam', 'dikembalikan']
-const CITIES = ['Jakarta', 'Bandung', 'Surabaya', 'Yogyakarta', 'San Francisco', 'Tokyo', 'London', 'Singapore']
-const COUNTRIES = ['Indonesia', 'United States', 'Japan', 'Germany', 'Singapore', 'Australia']
-const DESCRIPTIONS = [
-  'Buku referensi sains populer dan teknologi modern.',
-  'Dokumentasi teknis untuk arsitektur basis data relasional.',
-  'Catatan audit berkala untuk evaluasi performa.',
-  'Data peminjaman inventaris dengan verifikasi identitas.',
-  'Transaksi sukses diproses via sistem.',
-]
-
-function generateRuleValue(generator: GeneratorType, index: number): string | number | boolean | null {
-  function pick<T>(arr: T[]): T {
-    return arr[Math.floor(Math.random() * arr.length)]
-  }
-
-  switch (generator) {
-    case 'auto_increment':
-      return index + 1
-    case 'uuid':
-      return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
-    case 'first_name':
-      return pick(FIRST_NAMES)
-    case 'last_name':
-      return pick(LAST_NAMES)
-    case 'full_name':
-      return `${pick(FIRST_NAMES)} ${pick(LAST_NAMES)}`
-    case 'email': {
-      const f = pick(FIRST_NAMES).toLowerCase()
-      const l = pick(LAST_NAMES).toLowerCase()
-      const randNum = Math.floor(Math.random() * 899) + 100
-      return `${f}.${l}${randNum}@${pick(DOMAINS)}`
-    }
-    case 'phone':
-      return `+62-81${Math.floor(Math.random() * 89 + 10)}-${String(Math.floor(Math.random() * 9000 + 1000))}`
-    case 'status':
-      return pick(STATUSES)
-    case 'timestamp': {
-      const pastMs = Math.floor(Math.random() * 90 * 24 * 60 * 60 * 1000)
-      return new Date(Date.now() - pastMs).toISOString().slice(0, 19).replace('T', ' ')
-    }
-    case 'date': {
-      const pastDays = Math.floor(Math.random() * 120)
-      const d = new Date(Date.now() - pastDays * 24 * 60 * 60 * 1000)
-      return d.toISOString().slice(0, 10)
-    }
-    case 'price':
-      return Number((Math.random() * 250000 + 15000).toFixed(0))
-    case 'integer':
-      return Math.floor(Math.random() * 500) + 1
-    case 'boolean':
-      return Math.random() > 0.3
-    case 'city':
-      return pick(CITIES)
-    case 'country':
-      return pick(COUNTRIES)
-    case 'sentence':
-      return pick(DESCRIPTIONS)
-    case 'null':
-      return null
-  }
-}
 
 function formatSqlLiteral(val: string | number | boolean | null): string {
   if (val === null)
@@ -330,26 +176,11 @@ function formatSqlLiteral(val: string | number | boolean | null): string {
 
 const activeColumns = computed(() => columns.value.filter(c => c.included))
 
-const generatedRuleRows = computed(() => {
-  const count = Math.min(Math.max(1, rowCount.value), 1000)
-  const cols = activeColumns.value
-  const rows: Record<string, string | number | boolean | null>[] = []
-
-  for (let i = 0; i < count; i++) {
-    const row: Record<string, string | number | boolean | null> = {}
-    for (const c of cols) {
-      row[c.name] = generateRuleValue(c.generator, i)
-    }
-    rows.push(row)
-  }
-  return rows
-})
-
 const finalRows = computed(() => {
-  if (generatorMode.value === 'ai' && aiRows.value && aiRows.value.length > 0) {
+  if (aiRows.value && aiRows.value.length > 0) {
     return aiRows.value.slice(0, rowCount.value)
   }
-  return generatedRuleRows.value
+  return []
 })
 
 /**
@@ -536,7 +367,7 @@ Strictly NO markdown explanations, NO greeting, NO prose before or after the JSO
           cleanRow[col.name] = row[col.name] as never
         }
         else {
-          cleanRow[col.name] = generateRuleValue(col.generator, idx)
+          cleanRow[col.name] = null
         }
       }
       return cleanRow
@@ -571,8 +402,7 @@ const generatedSql = computed(() => {
     return `  (${rowVals.join(', ')})`
   })
 
-  const modeLabel = generatorMode.value === 'ai' && aiRows.value ? 'AI Synthesized' : 'Rule-Based Pattern'
-  return `-- DBolt Smart Mock Data Generator (${finalRows.value.length} rows - ${modeLabel})\nINSERT INTO ${targetTable} (${escapedCols})\nVALUES\n${valueRows.join(',\n')};`
+  return `-- DBolt Smart Mock Data Generator (${finalRows.value.length} rows - AI Synthesized)\nINSERT INTO ${targetTable} (${escapedCols})\nVALUES\n${valueRows.join(',\n')};`
 })
 
 async function copySql() {
@@ -636,49 +466,24 @@ async function insertDirectly() {
           </span>
         </DialogTitle>
 
-        <!-- Right Header: Mode Switcher & Row Count -->
-        <div class="mr-6 flex gap-3 items-center">
-          <!-- Mode Switcher -->
-          <div class="p-0.5 border rounded-lg bg-muted/50 flex items-center">
-            <button
-              type="button"
-              class="text-xs font-medium px-2.5 py-1 rounded-md transition-all flex gap-1.5 items-center"
-              :class="generatorMode === 'ai' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-              @click="generatorMode = 'ai'"
-            >
-              <Sparkles class="text-primary h-3 w-3" />
-              <span>AI Synthesizer</span>
-            </button>
-            <button
-              type="button"
-              class="text-xs font-medium px-2.5 py-1 rounded-md transition-all flex gap-1.5 items-center"
-              :class="generatorMode === 'rule' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-              @click="generatorMode = 'rule'"
-            >
-              <Layers class="h-3 w-3" />
-              <span>Rule-Based</span>
-            </button>
-          </div>
-
-          <!-- Row Count Presets -->
-          <div class="flex gap-1.5 items-center">
-            <span class="text-xs text-muted-foreground mr-0.5">Rows:</span>
-            <button
-              v-for="preset in [10, 25, 50, 100]"
-              :key="preset"
-              type="button"
-              class="text-xs font-medium px-2 py-0.5 rounded transition-colors"
-              :class="rowCount === preset ? 'bg-primary text-primary-foreground' : 'bg-muted/70 text-muted-foreground hover:text-foreground'"
-              @click="rowCount = preset"
-            >
-              {{ preset }}
-            </button>
-          </div>
+        <!-- Right Header: Row Count Presets -->
+        <div class="mr-6 flex gap-1.5 items-center">
+          <span class="text-xs text-muted-foreground mr-0.5">Rows:</span>
+          <button
+            v-for="preset in [10, 25, 50, 100]"
+            :key="preset"
+            type="button"
+            class="text-xs font-medium px-2 py-0.5 rounded transition-colors"
+            :class="rowCount === preset ? 'bg-primary text-primary-foreground' : 'bg-muted/70 text-muted-foreground hover:text-foreground'"
+            @click="rowCount = preset"
+          >
+            {{ preset }}
+          </button>
         </div>
       </div>
 
-      <!-- Navigation Tabs Bar (Hanya muncul jika mode Rule-Based, atau ketika sudah ada data AI untuk preview) -->
-      <div v-if="generatorMode === 'rule' || aiRows" class="text-xs font-medium px-5 pt-3 pb-0 border-b bg-card/20 flex shrink-0 gap-6">
+      <!-- Navigation Tabs Bar (Hanya muncul ketika sudah ada data AI untuk preview) -->
+      <div v-if="aiRows" class="text-xs font-medium px-5 pt-3 pb-0 border-b bg-card/20 flex shrink-0 gap-6">
         <button
           type="button"
           class="pb-2.5 border-b-2 flex gap-1.5 transition-colors items-center"
@@ -698,7 +503,6 @@ async function insertDirectly() {
           <Eye class="h-3.5 w-3.5" />
           <span>Live Data Preview</span>
           <span
-            v-if="generatorMode === 'ai' && aiRows"
             class="text-[10px] text-primary font-medium font-sans px-1.5 py-0.2 rounded bg-primary/15"
           >
             AI Active ({{ aiRows.length }})
@@ -730,7 +534,7 @@ async function insertDirectly() {
         <div v-else-if="activeTab === 'columns'" class="space-y-3">
           <div class="text-xs text-muted-foreground px-1 flex items-center justify-between">
             <span>
-              {{ generatorMode === 'ai' ? 'Columns included in AI prompt context.' : 'Choose rule-based synthetic generator for each column.' }}
+              Columns included in AI prompt context.
             </span>
             <div class="flex gap-2">
               <button
@@ -763,9 +567,6 @@ async function insertDirectly() {
                   </th>
                   <th class="px-3 py-2 w-32">
                     Type
-                  </th>
-                  <th v-if="generatorMode === 'rule'" class="px-3 py-2">
-                    Rule-Based Pattern
                   </th>
                 </tr>
               </thead>
@@ -803,37 +604,6 @@ async function insertDirectly() {
                   <td class="text-muted-foreground font-mono px-3 py-2">
                     {{ col.dataType }}
                   </td>
-                  <td v-if="generatorMode === 'rule'" class="px-3 py-1.5">
-                    <!-- In Rule mode: show custom popup selector -->
-                    <div class="relative max-w-[220px]">
-                      <button
-                        type="button"
-                        :disabled="!col.included"
-                        class="h-7 w-full flex items-center justify-between text-xs px-2.5 rounded-md border border-border/80 bg-background text-foreground transition-colors hover:border-border disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-primary"
-                        @click="openDropdownCol = openDropdownCol === col.name ? null : col.name"
-                      >
-                        <span class="truncate font-mono">{{ generatorOptions.find(o => o.value === col.generator)?.label || col.generator }}</span>
-                        <ChevronDown class="h-3 w-3 text-muted-foreground shrink-0 ml-1" />
-                      </button>
-
-                      <div
-                        v-if="openDropdownCol === col.name"
-                        class="fixed z-[100] mt-1 max-h-56 w-56 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl"
-                      >
-                        <button
-                          v-for="opt in generatorOptions"
-                          :key="opt.value"
-                          type="button"
-                          class="w-full text-left px-2.5 py-1.5 text-xs rounded-md hover:bg-accent hover:text-accent-foreground flex items-center justify-between transition-colors"
-                          :class="{ 'bg-accent/80 font-medium text-accent-foreground': col.generator === opt.value }"
-                          @click="col.generator = opt.value; openDropdownCol = null"
-                        >
-                          <span>{{ opt.label }}</span>
-                          <Check v-if="col.generator === opt.value" class="h-3.5 w-3.5 text-primary" />
-                        </button>
-                      </div>
-                    </div>
-                  </td>
                 </tr>
               </tbody>
             </table>
@@ -855,7 +625,7 @@ async function insertDirectly() {
           </div>
 
           <!-- AI Error Box -->
-          <div v-else-if="aiError && generatorMode === 'ai'" class="p-3 border border-destructive/30 rounded-lg bg-destructive/10 text-xs space-y-2">
+          <div v-else-if="aiError" class="p-3 border border-destructive/30 rounded-lg bg-destructive/10 text-xs space-y-2">
             <div class="text-destructive font-medium flex items-center justify-between">
               <div class="flex gap-2 items-center">
                 <AlertCircle class="h-4 w-4 shrink-0" />
@@ -897,40 +667,16 @@ async function insertDirectly() {
                 Preview of first {{ Math.min(finalRows.length, 5) }} synthetic records:
               </p>
               <span
-                v-if="generatorMode === 'ai' && aiRows"
+                v-if="aiRows"
                 class="text-[11px] text-primary font-medium px-2 py-0.5 border border-primary/20 rounded bg-primary/10 flex gap-1 items-center"
               >
                 <Sparkles class="h-3 w-3" />
                 AI Synthesized ({{ aiRows.length }} rows)
               </span>
-              <span
-                v-else-if="generatorMode === 'ai'"
-                class="text-[11px] text-muted-foreground font-medium px-2 py-0.5 rounded bg-muted/60"
-              >
-                Click 'Generate Now' below to synthesize with AI
-              </span>
-              <span
-                v-else
-                class="text-[11px] text-muted-foreground font-medium px-2 py-0.5 rounded bg-muted/60"
-              >
-                Rule-Based Mock
-              </span>
-            </div>
-
-            <!-- AI Not Yet Generated Placeholder -->
-            <div
-              v-if="generatorMode === 'ai' && !aiRows"
-              class="p-8 border border-dashed rounded-lg bg-card/20 flex flex-col gap-2 items-center justify-center text-center"
-            >
-              <Sparkles class="h-6 w-6 text-primary/70" />
-              <p class="text-xs text-foreground font-medium">Ready to synthesize realistic data</p>
-              <p class="text-xs text-muted-foreground max-w-sm">
-                Select your preferred model below, then click <strong>Generate Now</strong> to populate records using AI semantics.
-              </p>
             </div>
 
             <!-- Preview Data Grid -->
-            <div v-else class="border rounded-lg bg-card/40 overflow-x-auto">
+            <div class="border rounded-lg bg-card/40 overflow-x-auto">
               <table class="text-xs text-left w-full">
                 <thead class="text-muted-foreground font-medium border-b bg-muted/40 sticky top-0 z-10">
                   <tr>
@@ -988,10 +734,10 @@ async function insertDirectly() {
         </div>
       </div>
 
-      <!-- BOTTOM ACTION BAR / FOOTER (Dinamis Sesuai Mode) -->
+      <!-- BOTTOM ACTION BAR / FOOTER -->
       <div class="px-5 py-3 border-t bg-muted/20 flex shrink-0 items-center justify-between gap-4">
-        <!-- ── FOOTER KIRI: Model Picker (Khusus AI Synthesizer) ── -->
-        <div v-if="generatorMode === 'ai'" class="flex items-center gap-2">
+        <!-- FOOTER KIRI: Model Picker -->
+        <div class="flex items-center gap-2">
           <span class="text-xs text-muted-foreground flex items-center gap-1 font-medium">
             <Sparkles class="h-3.5 w-3.5 text-primary" />
             <span>Model:</span>
@@ -1039,14 +785,9 @@ async function insertDirectly() {
           </div>
         </div>
 
-        <!-- ── FOOTER KIRI: Info Status (Khusus Rule-Based) ── -->
-        <div v-else class="text-xs text-muted-foreground flex gap-1.5 items-center">
-          <span>Ready to seed <strong class="text-foreground">{{ finalRows.length }}</strong> rows into <code class="text-xs font-mono">{{ tableName }}</code></span>
-        </div>
-
-        <!-- ── FOOTER KANAN: Action Buttons (Dinamis) ── -->
-        <!-- Skenario 1: Mode AI Synthesizer (Sebelum Generate Data) -->
-        <div v-if="generatorMode === 'ai' && !aiRows" class="flex items-center gap-2">
+        <!-- FOOTER KANAN: Action Buttons -->
+        <!-- Skenario 1: Sebelum Generate Data -->
+        <div v-if="!aiRows" class="flex items-center gap-2">
           <Button
             size="sm"
             class="text-xs font-medium px-4 gap-1.5 h-8 bg-primary text-primary-foreground hover:opacity-90 shadow-sm"
@@ -1068,8 +809,8 @@ async function insertDirectly() {
           </Button>
         </div>
 
-        <!-- Skenario 2: Mode AI Synthesizer (Setelah Data AI Berhasil di-generate) -->
-        <div v-else-if="generatorMode === 'ai' && aiRows" class="flex items-center gap-2">
+        <!-- Skenario 2: Setelah Data AI Berhasil di-generate -->
+        <div v-else class="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -1078,42 +819,9 @@ async function insertDirectly() {
             @click="generateWithAi"
           >
             <RefreshCw class="h-3 w-3" />
-            <span>Regenerate with AI</span>
+            <span>Regenerate</span>
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            class="h-8 text-xs gap-1.5"
-            @click="openInEditor"
-          >
-            <FileCode class="h-3.5 w-3.5" />
-            <span>Open in SQL Tab</span>
-          </Button>
-
-          <Button
-            size="sm"
-            class="h-8 text-xs bg-primary text-primary-foreground gap-1.5 hover:opacity-90 shadow-sm"
-            :disabled="executing || loading || activeColumns.length === 0"
-            @click="insertDirectly"
-          >
-            <Spinner v-if="executing" size="sm" class="h-3.5 w-3.5" />
-            <Play v-else class="h-3.5 w-3.5" />
-            <span>Insert Directly</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            class="h-8 text-xs"
-            @click="emit('update:open', false)"
-          >
-            Cancel
-          </Button>
-        </div>
-
-        <!-- Skenario 3: Mode Rule-Based Pattern -->
-        <div v-else class="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
