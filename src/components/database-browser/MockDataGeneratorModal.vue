@@ -677,8 +677,8 @@ async function insertDirectly() {
         </div>
       </div>
 
-      <!-- Navigation Tabs Bar (Sejajar di atas) -->
-      <div class="text-xs font-medium px-5 pt-3 pb-0 border-b bg-card/20 flex shrink-0 gap-6">
+      <!-- Navigation Tabs Bar (Hanya muncul jika mode Rule-Based, atau ketika sudah ada data AI untuk preview) -->
+      <div v-if="generatorMode === 'rule' || aiRows" class="text-xs font-medium px-5 pt-3 pb-0 border-b bg-card/20 flex shrink-0 gap-6">
         <button
           type="button"
           class="pb-2.5 border-b-2 flex gap-1.5 transition-colors items-center"
@@ -764,8 +764,8 @@ async function insertDirectly() {
                   <th class="px-3 py-2 w-32">
                     Type
                   </th>
-                  <th class="px-3 py-2">
-                    {{ generatorMode === 'ai' ? 'AI Inference Role' : 'Rule-Based Pattern' }}
+                  <th v-if="generatorMode === 'rule'" class="px-3 py-2">
+                    Rule-Based Pattern
                   </th>
                 </tr>
               </thead>
@@ -803,16 +803,9 @@ async function insertDirectly() {
                   <td class="text-muted-foreground font-mono px-3 py-2">
                     {{ col.dataType }}
                   </td>
-                  <td class="px-3 py-1.5">
-                    <!-- In AI mode: show semantic inferred badge -->
-                    <div v-if="generatorMode === 'ai'" class="flex items-center">
-                      <span class="text-[11px] text-muted-foreground font-mono px-2 py-0.5 border border-border/60 rounded bg-muted/30">
-                        Synthesized by AI ({{ col.generator }})
-                      </span>
-                    </div>
-
+                  <td v-if="generatorMode === 'rule'" class="px-3 py-1.5">
                     <!-- In Rule mode: show custom popup selector -->
-                    <div v-else class="relative max-w-[220px]">
+                    <div class="relative max-w-[220px]">
                       <button
                         type="button"
                         :disabled="!col.included"
@@ -1004,7 +997,7 @@ async function insertDirectly() {
             <span>Model:</span>
           </span>
 
-          <!-- Custom Themed Model Dropdown -->
+          <!-- Custom Themed Model Dropdown (Opens upwards) -->
           <div class="relative">
             <button
               type="button"
@@ -1012,12 +1005,16 @@ async function insertDirectly() {
               @click="openModelDropdown = !openModelDropdown"
             >
               <span class="truncate max-w-[150px] font-mono font-medium">{{ selectedModelLabel }}</span>
-              <ChevronDown class="h-3 w-3 text-muted-foreground ml-0.5 shrink-0" />
+              <ChevronDown
+                class="h-3.5 w-3.5 text-muted-foreground ml-0.5 shrink-0 transition-transform duration-200"
+                :class="{ 'rotate-180': openModelDropdown }"
+              />
             </button>
 
+            <!-- Dropdown popup positioning upwards -->
             <div
               v-if="openModelDropdown"
-              class="fixed z-[100] mt-1 max-h-60 w-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-2xl"
+              class="absolute bottom-full left-0 mb-1.5 max-h-60 w-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-2xl z-50"
             >
               <div v-for="group in modelGroups" :key="group.id" class="p-1">
                 <div class="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
