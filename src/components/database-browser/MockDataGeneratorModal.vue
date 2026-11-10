@@ -139,7 +139,7 @@ async function loadTableColumns() {
       nullable: c.nullable,
       isPrimaryKey: c.is_primary_key,
       isAutoIncrement: c.is_auto_increment,
-      included: !c.is_auto_increment,
+      included: false,
     }))
   }
   catch (err) {
