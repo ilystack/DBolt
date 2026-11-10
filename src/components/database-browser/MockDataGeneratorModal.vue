@@ -158,7 +158,7 @@ async function syncModels() {
   try {
     const { useAppStore } = await import('@/store/appStore')
     const appStore = useAppStore()
-    const providers = appStore.llmSettings.providers || []
+    const providers = appStore.llmSettings?.providers || []
     modelGroups.value = providers
       .filter(provider => provider.enabled && (provider.models ?? []).length > 0)
       .map(provider => ({
@@ -171,8 +171,8 @@ async function syncModels() {
         })),
       }))
 
-    const current = appStore.llmSettings.models.dataStudio?.selectedModelId
-      || appStore.llmSettings.models.sidebarAssistant?.selectedModelId
+    const current = appStore.llmSettings?.models?.dataStudio?.selectedModelId
+      || appStore.llmSettings?.models?.sidebarAssistant?.selectedModelId
     selectedModelId.value = current || undefined
   }
   catch (err) {
@@ -535,7 +535,7 @@ async function insertDirectly() {
   <Dialog :open="open" @update:open="handleDialogOpenChange">
     <DialogContent
       :show-close="!isGeneratingAi && !executing"
-      class="p-0 border rounded-xl bg-background flex flex-col gap-0 max-h-[92vh] max-w-4xl shadow-2xl overflow-hidden relative"
+      class="p-0 border rounded-xl bg-background flex flex-col gap-0 max-h-[92vh] max-w-4xl shadow-2xl overflow-hidden"
       @pointer-down-outside="handleOutsideInteraction"
       @interact-outside="handleOutsideInteraction"
       @escape-key-down="handleEscapeKey"
