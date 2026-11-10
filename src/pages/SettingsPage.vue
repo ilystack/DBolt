@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { Check, Globe, Laptop, Languages } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { SettingsAbout } from '@/components/settings/about'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 // Separator is rendered inline as a styled div
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { toast } from '@/composables/useNotifications'
 import { LanguageType, ThemeType, useAppStore } from '@/store/appStore'
 import AiSettings from '@/views/setting/ai-settings.vue'
 import JreDriverSection from '@/views/setting/jre-driver-section.vue'
@@ -17,24 +19,101 @@ import McpBridge from '@/views/setting/mcp-bridge.vue'
 const appStore = useAppStore()
 const { t, locale: _locale } = useI18n()
 
-const preferencesSaved = ref(false)
-watch(() => [appStore.themeType, appStore.languageType, appStore.editorConfig, appStore.queryConfig], () => {
-  preferencesSaved.value = true
-}, { deep: true })
-// --- Theme ---
-const currentTheme = computed(() => appStore.themeType)
+// Draft states for General settings (Appearance, Editor, Query)
+const draftTheme = ref<ThemeType>(appStore.themeType)
+const draftLanguage = ref<LanguageType>(appStore.languageType)
 
+const fontSizeInput = ref(String(appStore.editorConfig.fontSize))
+const fontSizeError = ref('')
+
+const tabSizeInput = ref(String(appStore.editorConfig.tabSize))
+const tabSizeError = ref('')
+
+const indentWidthInput = ref(String(appStore.editorConfig.indentWidth ?? 2))
+const indentWidthError = ref('')
+
+const lineWidthInput = ref(String(appStore.editorConfig.lineWidth ?? 120))
+const lineWidthError = ref('')
+
+const draftWordWrap = ref(Boolean(appStore.editorConfig.wordWrap))
+const draftShowLineNumbers = ref(Boolean(appStore.editorConfig.showLineNumbers))
+const draftShowMinimap = ref(Boolean(appStore.editorConfig.showMinimap))
+
+const defaultLimitInput = ref(String(appStore.queryConfig.defaultLimit))
+const defaultLimitError = ref('')
+
+const queryTimeoutInput = ref(String(Math.round(appStore.queryConfig.queryTimeout / 1000)))
+const queryTimeoutError = ref('')
+
+const draftAutoSave = ref(Boolean(appStore.queryConfig.autoSave))
+
+const isDirty = computed(() => {
+  return (
+    draftTheme.value !== appStore.themeType
+    || draftLanguage.value !== appStore.languageType
+    || fontSizeInput.value !== String(appStore.editorConfig.fontSize)
+    || tabSizeInput.value !== String(appStore.editorConfig.tabSize)
+    || indentWidthInput.value !== String(appStore.editorConfig.indentWidth ?? 2)
+    || lineWidthInput.value !== String(appStore.editorConfig.lineWidth ?? 120)
+    || draftWordWrap.value !== Boolean(appStore.editorConfig.wordWrap)
+    || draftShowLineNumbers.value !== Boolean(appStore.editorConfig.showLineNumbers)
+    || draftShowMinimap.value !== Boolean(appStore.editorConfig.showMinimap)
+    || defaultLimitInput.value !== String(appStore.queryConfig.defaultLimit)
+    || queryTimeoutInput.value !== String(Math.round(appStore.queryConfig.queryTimeout / 1000))
+    || draftAutoSave.value !== Boolean(appStore.queryConfig.autoSave)
+  )
+})
+
+const hasValidationError = computed(() => {
+  return Boolean(
+    fontSizeError.value
+    || tabSizeError.value
+    || indentWidthError.value
+    || lineWidthError.value
+    || defaultLimitError.value
+    || queryTimeoutError.value,
+  )
+})
+
+// Sync draft with store if store changes externally and user hasn't made dirty edits
+watch(
+  () => [
+    appStore.themeType,
+    appStore.languageType,
+    appStore.editorConfig,
+    appStore.queryConfig,
+  ],
+  () => {
+    if (!isDirty.value) {
+      draftTheme.value = appStore.themeType
+      draftLanguage.value = appStore.languageType
+      fontSizeInput.value = String(appStore.editorConfig.fontSize)
+      tabSizeInput.value = String(appStore.editorConfig.tabSize)
+      indentWidthInput.value = String(appStore.editorConfig.indentWidth ?? 2)
+      lineWidthInput.value = String(appStore.editorConfig.lineWidth ?? 120)
+      draftWordWrap.value = Boolean(appStore.editorConfig.wordWrap)
+      draftShowLineNumbers.value = Boolean(appStore.editorConfig.showLineNumbers)
+      draftShowMinimap.value = Boolean(appStore.editorConfig.showMinimap)
+      defaultLimitInput.value = String(appStore.queryConfig.defaultLimit)
+      queryTimeoutInput.value = String(Math.round(appStore.queryConfig.queryTimeout / 1000))
+      draftAutoSave.value = Boolean(appStore.queryConfig.autoSave)
+    }
+  },
+  { deep: true },
+)
+
+// --- Theme ---
 const themeOptions = [
   { value: ThemeType.AUTO, label: () => t('pages.settings.general.themes.system') },
   { value: ThemeType.DARK, label: () => t('pages.settings.general.themes.dark') },
   { value: ThemeType.LIGHT, label: () => t('pages.settings.general.themes.light') },
 ]
 
-const handleThemeChange = (theme: ThemeType) => appStore.setThemeType(theme)
+const handleThemeChange = (theme: ThemeType) => {
+  draftTheme.value = theme
+}
 
 // --- Language ---
-const currentLanguage = computed(() => appStore.languageType)
-
 const languageOptions = [
   {
     value: LanguageType.AUTO,
@@ -56,10 +135,9 @@ const languageOptions = [
   },
 ]
 
-const handleLanguageChange = (lang: LanguageType) => appStore.setLanguageType(lang)
-
-const fontSizeInput = ref(String(appStore.editorConfig.fontSize))
-const fontSizeError = ref('')
+const handleLanguageChange = (lang: LanguageType) => {
+  draftLanguage.value = lang
+}
 
 function handleFontSizeChange(val: string | number) {
   fontSizeInput.value = String(val)
@@ -69,12 +147,8 @@ function handleFontSizeChange(val: string | number) {
   }
   else {
     fontSizeError.value = ''
-    appStore.setEditorConfig({ fontSize: num })
   }
 }
-
-const tabSizeInput = ref(String(appStore.editorConfig.tabSize))
-const tabSizeError = ref('')
 
 function handleTabSizeChange(val: string | number) {
   tabSizeInput.value = String(val)
@@ -84,12 +158,8 @@ function handleTabSizeChange(val: string | number) {
   }
   else {
     tabSizeError.value = ''
-    appStore.setEditorConfig({ tabSize: num })
   }
 }
-
-const indentWidthInput = ref(String(appStore.editorConfig.indentWidth ?? 2))
-const indentWidthError = ref('')
 
 function handleIndentWidthChange(val: string | number) {
   indentWidthInput.value = String(val)
@@ -99,12 +169,8 @@ function handleIndentWidthChange(val: string | number) {
   }
   else {
     indentWidthError.value = ''
-    appStore.setEditorConfig({ indentWidth: num })
   }
 }
-
-const lineWidthInput = ref(String(appStore.editorConfig.lineWidth ?? 120))
-const lineWidthError = ref('')
 
 function handleLineWidthChange(val: string | number) {
   lineWidthInput.value = String(val)
@@ -114,20 +180,18 @@ function handleLineWidthChange(val: string | number) {
   }
   else {
     lineWidthError.value = ''
-    appStore.setEditorConfig({ lineWidth: num })
   }
 }
 
-const wordWrap = computed(() => appStore.editorConfig.wordWrap)
-const showLineNumbers = computed(() => appStore.editorConfig.showLineNumbers)
-const showMinimap = computed(() => appStore.editorConfig.showMinimap)
-
-const toggleWordWrap = () => appStore.setEditorConfig({ wordWrap: !appStore.editorConfig.wordWrap })
-const toggleLineNumbers = () => appStore.setEditorConfig({ showLineNumbers: !appStore.editorConfig.showLineNumbers })
-const toggleMinimap = () => appStore.setEditorConfig({ showMinimap: !appStore.editorConfig.showMinimap })
-
-const defaultLimitInput = ref(String(appStore.queryConfig.defaultLimit))
-const defaultLimitError = ref('')
+const toggleWordWrap = () => {
+  draftWordWrap.value = !draftWordWrap.value
+}
+const toggleLineNumbers = () => {
+  draftShowLineNumbers.value = !draftShowLineNumbers.value
+}
+const toggleMinimap = () => {
+  draftShowMinimap.value = !draftShowMinimap.value
+}
 
 function handleDefaultLimitChange(val: string | number) {
   defaultLimitInput.value = String(val)
@@ -137,12 +201,8 @@ function handleDefaultLimitChange(val: string | number) {
   }
   else {
     defaultLimitError.value = ''
-    appStore.setDefaultLimit(num)
   }
 }
-
-const queryTimeoutInput = ref(String(Math.round(appStore.queryConfig.queryTimeout / 1000)))
-const queryTimeoutError = ref('')
 
 function handleQueryTimeoutChange(val: string | number) {
   queryTimeoutInput.value = String(val)
@@ -152,12 +212,66 @@ function handleQueryTimeoutChange(val: string | number) {
   }
   else {
     queryTimeoutError.value = ''
-    appStore.setQueryTimeout(num * 1000)
   }
 }
 
-const autoSave = computed(() => appStore.queryConfig.autoSave)
-const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave)
+const toggleAutoSave = () => {
+  draftAutoSave.value = !draftAutoSave.value
+}
+
+// --- Apply changes ---
+const recentlySaved = ref(false)
+let savedTimer: ReturnType<typeof setTimeout> | null = null
+
+onUnmounted(() => {
+  if (savedTimer) {
+    clearTimeout(savedTimer)
+  }
+})
+
+function handleApply() {
+  if (hasValidationError.value || !isDirty.value) {
+    return
+  }
+
+  const parsedFontSize = Number(fontSizeInput.value)
+  const parsedTabSize = Number(tabSizeInput.value)
+  const parsedIndentWidth = Number(indentWidthInput.value)
+  const parsedLineWidth = Number(lineWidthInput.value)
+  const parsedDefaultLimit = Number(defaultLimitInput.value)
+  const parsedQueryTimeout = Number(queryTimeoutInput.value) * 1000
+
+  if (draftTheme.value !== appStore.themeType) {
+    appStore.setThemeType(draftTheme.value)
+  }
+  if (draftLanguage.value !== appStore.languageType) {
+    appStore.setLanguageType(draftLanguage.value)
+  }
+
+  appStore.setEditorConfig({
+    fontSize: parsedFontSize,
+    tabSize: parsedTabSize,
+    indentWidth: parsedIndentWidth,
+    lineWidth: parsedLineWidth,
+    wordWrap: draftWordWrap.value,
+    showLineNumbers: draftShowLineNumbers.value,
+    showMinimap: draftShowMinimap.value,
+  })
+
+  appStore.setDefaultLimit(parsedDefaultLimit)
+  appStore.setQueryTimeout(parsedQueryTimeout)
+  appStore.setAutoSave(draftAutoSave.value)
+
+  recentlySaved.value = true
+  if (savedTimer) {
+    clearTimeout(savedTimer)
+  }
+  savedTimer = setTimeout(() => {
+    recentlySaved.value = false
+  }, 3000)
+
+  toast.success(t('pages.settings.feedback.saved'))
+}
 </script>
 
 <template>
@@ -171,7 +285,24 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
           </h1>
           <span class="text-muted-foreground">|</span>
           <span class="text-sm text-muted-foreground">{{ t('pages.settings.subtitle') }}</span>
-          <span v-if="preferencesSaved" class="text-xs text-muted-foreground ml-auto flex gap-1.5 items-center" role="status"><span class="i-lucide-circle-check text-success h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.feedback.saved') }}</span>
+          <div class="ml-auto flex items-center">
+            <Button
+              v-if="isDirty"
+              size="sm"
+              :disabled="hasValidationError"
+              @click="handleApply"
+            >
+              {{ t('pages.settings.general.apply') }}
+            </Button>
+            <span
+              v-else-if="recentlySaved"
+              class="text-xs text-muted-foreground flex gap-1.5 items-center"
+              role="status"
+            >
+              <span class="i-lucide-circle-check text-success h-3.5 w-3.5" aria-hidden="true" />
+              {{ t('pages.settings.feedback.saved') }}
+            </span>
+          </div>
         </div>
       </header>
 
@@ -211,7 +342,7 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                       v-for="opt in themeOptions"
                       :key="opt.value"
                       class="p-2 border-2 rounded-lg cursor-pointer transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      :class="currentTheme === opt.value
+                      :class="draftTheme === opt.value
                         ? 'border-primary'
                         : 'border-border hover:border-muted-foreground'"
                       @click="handleThemeChange(opt.value)"
@@ -237,7 +368,7 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                       </div>
                       <!-- Selected checkmark -->
                       <div
-                        v-if="currentTheme === opt.value"
+                        v-if="draftTheme === opt.value"
                         class="rounded-full bg-primary flex h-5 w-5 items-center right-2 top-2 justify-center absolute"
                       >
                         <span class="i-carbon-checkmark text-primary-foreground h-3 w-3" />
@@ -267,7 +398,7 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                       :key="opt.value"
                       type="button"
                       class="p-3.5 border-2 rounded-lg cursor-pointer transition-colors relative flex flex-col justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-ring text-left"
-                      :class="currentLanguage === opt.value
+                      :class="draftLanguage === opt.value
                         ? 'border-primary bg-primary/5'
                         : 'border-border hover:border-muted-foreground bg-card'"
                       @click="handleLanguageChange(opt.value)"
@@ -278,7 +409,7 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                           <span class="text-sm font-medium">{{ opt.label() }}</span>
                         </div>
                         <div
-                          v-if="currentLanguage === opt.value"
+                          v-if="draftLanguage === opt.value"
                           class="rounded-full bg-primary flex h-4 w-4 items-center justify-center shrink-0"
                         >
                           <Check class="h-2.5 w-2.5 text-primary-foreground stroke-[3]" />
@@ -401,14 +532,14 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                   </div>
                   <button
                     class="border-2 border-transparent rounded-full inline-flex flex-shrink-0 h-6 w-11 cursor-pointer transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="wordWrap ? 'bg-primary' : 'bg-muted'"
+                    :class="draftWordWrap ? 'bg-primary' : 'bg-muted'"
                     role="switch"
-                    :aria-checked="wordWrap"
+                    :aria-checked="draftWordWrap"
                     @click="toggleWordWrap"
                   >
                     <span
                       class="rounded-full bg-background h-5 w-5 inline-block pointer-events-none shadow transition-transform"
-                      :class="wordWrap ? 'translate-x-5' : 'translate-x-0'"
+                      :class="draftWordWrap ? 'translate-x-5' : 'translate-x-0'"
                     />
                   </button>
                 </div>
@@ -423,14 +554,14 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                   </div>
                   <button
                     class="border-2 border-transparent rounded-full inline-flex flex-shrink-0 h-6 w-11 cursor-pointer transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="showLineNumbers ? 'bg-primary' : 'bg-muted'"
+                    :class="draftShowLineNumbers ? 'bg-primary' : 'bg-muted'"
                     role="switch"
-                    :aria-checked="showLineNumbers"
+                    :aria-checked="draftShowLineNumbers"
                     @click="toggleLineNumbers"
                   >
                     <span
                       class="rounded-full bg-background h-5 w-5 inline-block pointer-events-none shadow transition-transform"
-                      :class="showLineNumbers ? 'translate-x-5' : 'translate-x-0'"
+                      :class="draftShowLineNumbers ? 'translate-x-5' : 'translate-x-0'"
                     />
                   </button>
                 </div>
@@ -445,14 +576,14 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                   </div>
                   <button
                     class="border-2 border-transparent rounded-full inline-flex flex-shrink-0 h-6 w-11 cursor-pointer transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="showMinimap ? 'bg-primary' : 'bg-muted'"
+                    :class="draftShowMinimap ? 'bg-primary' : 'bg-muted'"
                     role="switch"
-                    :aria-checked="showMinimap"
+                    :aria-checked="draftShowMinimap"
                     @click="toggleMinimap"
                   >
                     <span
                       class="rounded-full bg-background h-5 w-5 inline-block pointer-events-none shadow transition-transform"
-                      :class="showMinimap ? 'translate-x-5' : 'translate-x-0'"
+                      :class="draftShowMinimap ? 'translate-x-5' : 'translate-x-0'"
                     />
                   </button>
                 </div>
@@ -521,14 +652,14 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                   </div>
                   <button
                     class="border-2 border-transparent rounded-full inline-flex flex-shrink-0 h-6 w-11 cursor-pointer transition-colors relative focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    :class="autoSave ? 'bg-primary' : 'bg-muted'"
+                    :class="draftAutoSave ? 'bg-primary' : 'bg-muted'"
                     role="switch"
-                    :aria-checked="autoSave"
+                    :aria-checked="draftAutoSave"
                     @click="toggleAutoSave"
                   >
                     <span
                       class="rounded-full bg-background h-5 w-5 inline-block pointer-events-none shadow transition-transform"
-                      :class="autoSave ? 'translate-x-5' : 'translate-x-0'"
+                      :class="draftAutoSave ? 'translate-x-5' : 'translate-x-0'"
                     />
                   </button>
                 </div>

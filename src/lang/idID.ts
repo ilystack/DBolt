@@ -574,6 +574,7 @@ export const idID = {
       general: {
         title: "Umum",
         description: "Konfigurasikan tampilan, editor SQL, dan preferensi eksekusi kueri",
+        apply: "Terapkan",
         theme: "Tema",
         themeSelect: "Pilih tema",
         themeHelp: "Pilih tema terang, gelap, atau ikuti sistem",

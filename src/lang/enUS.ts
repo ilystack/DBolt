@@ -578,6 +578,7 @@ export const enUS = {
       general: {
         title: 'General',
         description: 'Configure appearance, SQL editor, and query execution preferences',
+        apply: 'Apply',
         theme: 'Theme',
         themeSelect: 'Select theme',
         themeHelp: 'Choose between light, dark, or system theme',
