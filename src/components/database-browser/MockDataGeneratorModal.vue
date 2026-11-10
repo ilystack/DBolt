@@ -78,6 +78,22 @@ const selectedModelLabel = computed(() => {
   return active?.label || activeModelLabel.value || 'Select Model'
 })
 
+const fullTableName = computed(() => {
+  if (props.schema && props.database && props.schema !== props.database) {
+    return `${props.database}.${props.schema}.${props.tableName}`
+  }
+  const prefix = props.schema || props.database
+  return prefix ? `${prefix}.${props.tableName}` : props.tableName
+})
+
+const targetTableIdentifier = computed(() => {
+  if (props.schema && props.database && props.schema !== props.database) {
+    return `\`${props.schema}\`.\`${props.tableName}\``
+  }
+  const prefix = props.schema || props.database
+  return prefix ? `\`${prefix}\`.\`${props.tableName}\`` : `\`${props.tableName}\``
+})
+
 const generateButtonText = computed(() => {
   if (!isGeneratingAi.value)
     return 'Generate Now'
@@ -334,7 +350,7 @@ async function generateWithAi() {
     }))
 
     const count = Math.min(Math.max(1, rowCount.value), 100)
-    const tableId = props.schema ? `${props.schema}.${props.tableName}` : props.tableName
+    const tableId = fullTableName.value
 
     aiStep.value = 'prompting'
 
@@ -427,7 +443,7 @@ const generatedSql = computed(() => {
     return '-- Select at least one column to generate INSERT statements.'
 
   const escapedCols = cols.map(c => `\`${c.name}\``).join(', ')
-  const targetTable = props.schema ? `\`${props.schema}\`.\`${props.tableName}\`` : `\`${props.tableName}\``
+  const targetTable = targetTableIdentifier.value
 
   const valueRows = finalRows.value.map((row) => {
     const rowVals = cols.map(c => formatSqlLiteral(row[c.name]))
@@ -494,7 +510,7 @@ async function insertDirectly() {
           <Wand2 class="text-primary h-4 w-4" />
           <span>Mock Data Generator</span>
           <span class="text-xs text-muted-foreground font-mono font-normal px-2 py-0.5 border rounded bg-muted/60">
-            {{ database ? (schema ? `${database}.${schema}.${tableName}` : `${database}.${tableName}`) : (schema ? `${schema}.${tableName}` : tableName) }}
+            {{ fullTableName }}
           </span>
         </DialogTitle>
 
