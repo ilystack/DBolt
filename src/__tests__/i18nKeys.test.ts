@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { enUS } from '@/lang/enUS'
-import { zhCN } from '@/lang/zhCN'
+import { idID } from '@/lang/idID'
 
 /**
  * Guards against the class of bug where a literal `t('some.key')` does not
@@ -72,9 +72,9 @@ describe('i18n message keys', () => {
     expect(missing).toEqual([])
   })
 
-  it('resolves every literal key in zhCN', () => {
+  it('resolves every literal key in idID', () => {
     const missing = [...keys.entries()]
-      .filter(([key]) => lookup(zhCN as unknown as Record<string, unknown>, key) === undefined)
+      .filter(([key]) => lookup(idID as unknown as Record<string, unknown>, key) === undefined)
       .map(([key, file]) => `${key} (${file})`)
 
     expect(missing).toEqual([])

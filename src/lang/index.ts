@@ -1,8 +1,8 @@
 import { createI18n, useI18n } from 'vue-i18n'
 import { enUS } from './enUS'
-import { zhCN } from './zhCN'
+import { idID } from './idID'
 
-type AppLocale = 'zhCN' | 'enUS'
+type AppLocale = 'idID' | 'enUS'
 
 function getStoredLocale(): AppLocale | 'auto' {
   if (typeof localStorage === 'undefined')
@@ -10,16 +10,22 @@ function getStoredLocale(): AppLocale | 'auto' {
   return (localStorage.getItem('lang') as AppLocale | 'auto') || 'auto'
 }
 
-const AVAILABLE_LOCALES: AppLocale[] = ['enUS', 'zhCN']
+const AVAILABLE_LOCALES: AppLocale[] = ['enUS', 'idID']
+
+function isIndonesianLanguage(langCode?: string): boolean {
+  if (!langCode)
+    return false
+  return langCode.toLowerCase().startsWith('id')
+}
 
 function resolveLocale(): AppLocale {
   const stored = getStoredLocale()
   if (stored === 'auto')
-    return typeof navigator !== 'undefined' && navigator.language === 'zh-CN' ? 'zhCN' : 'enUS'
+    return typeof navigator !== 'undefined' && isIndonesianLanguage(navigator.language) ? 'idID' : 'enUS'
   // Validate stored locale against available locales; fall back to auto if invalid
   if (AVAILABLE_LOCALES.includes(stored as AppLocale))
     return stored
-  return typeof navigator !== 'undefined' && navigator.language === 'zh-CN' ? 'zhCN' : 'enUS'
+  return typeof navigator !== 'undefined' && isIndonesianLanguage(navigator.language) ? 'idID' : 'enUS'
 }
 
 const lang = createI18n({
@@ -30,7 +36,7 @@ const lang = createI18n({
   missingWarn: false,
   fallbackWarn: false,
   messages: {
-    zhCN,
+    idID,
     enUS,
   },
 })

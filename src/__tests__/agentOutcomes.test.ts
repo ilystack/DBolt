@@ -3,7 +3,7 @@ import type { AgentToolCall } from '@/store/dataStudioStore'
 import { mount } from '@vue/test-utils'
 import AgentMessageBubble from '@/components/agent-message-bubble.vue'
 import { enUS } from '@/lang/enUS'
-import { zhCN } from '@/lang/zhCN'
+import { idID } from '@/lang/idID'
 
 let mockMessages: Record<string, any> = enUS
 jest.mock('vue-i18n', () => ({
@@ -29,7 +29,7 @@ const call: AgentToolCall = {
   denial: { kind: 'permission', source: 'connection', connectionId: 'db', action: 'manage', message: 'Manage denied' },
 }
 const render = (tool = call, locale = 'enUS', canRetry = true) => {
-  mockMessages = locale === 'zhCN' ? zhCN : enUS
+  mockMessages = locale === 'idID' ? idID : enUS
   return mount(AgentMessageBubble, {
     props: { message: { role: 'assistant', status: 'done', toolCalls: [tool] }, canRetry },
   })
@@ -67,8 +67,8 @@ describe('tool outcome notices', () => {
   })
 
   it('localizes rejection and disables recovery while the previous run is still settling', () => {
-    const wrapper = render(call, 'zhCN', false)
-    expect(wrapper.get('[role="alert"]').text()).toContain('权限不足，操作未执行')
+    const wrapper = render(call, 'idID', false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Diblokir oleh izin — tindakan tidak dijalankan')
     expect(wrapper.findAll('button').every(button => button.attributes('disabled') !== undefined)).toBe(true)
   })
 

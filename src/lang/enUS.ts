@@ -591,7 +591,7 @@ export const enUS = {
         languageHelp: 'Choose your preferred language',
         languages: {
           enUS: 'English',
-          zhCN: '简体中文',
+          idID: 'Bahasa Indonesia',
           auto: 'Auto (Follow System)',
         },
       },

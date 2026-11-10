@@ -14,7 +14,7 @@ let systemThemeHandler: ((e: MediaQueryListEvent) => void) | null = null
 
 export enum LanguageType {
   AUTO = 'auto',
-  ZH_CN = 'zhCN',
+  ID_ID = 'idID',
   EN_US = 'enUS',
 }
 
@@ -423,7 +423,7 @@ export const useAppStore = defineStore('app', {
       if (!resolved) {
         const locale = lang.global.locale.value || 'enUS'
         const raw = lang.global.messages as Record<string, any>
-        const localeMsgs = raw[locale] || raw.enUS || raw.zhCN || {}
+        const localeMsgs = raw[locale] || raw.enUS || raw.idID || {}
         const msg = (localeMsgs.settings || localeMsgs)?.ai?.missing
           || localeMsgs['settings.ai.missing']
           || 'No AI model configured. Please add a provider and select a model in Settings.'
