@@ -2,30 +2,39 @@ import { createI18n, useI18n } from 'vue-i18n'
 import { enUS } from './enUS'
 import { idID } from './idID'
 
-type AppLocale = 'idID' | 'enUS'
+export type AppLocale = 'idID' | 'enUS'
 
-function getStoredLocale(): AppLocale | 'auto' {
+export function getStoredLocale(): AppLocale | 'auto' {
   if (typeof localStorage === 'undefined')
     return 'enUS'
   return (localStorage.getItem('lang') as AppLocale | 'auto') || 'auto'
 }
 
-const AVAILABLE_LOCALES: AppLocale[] = ['enUS', 'idID']
+export const AVAILABLE_LOCALES: AppLocale[] = ['enUS', 'idID']
 
-function isIndonesianLanguage(langCode?: string): boolean {
+export function isIndonesianLanguage(langCode?: string): boolean {
   if (!langCode)
     return false
   return langCode.toLowerCase().startsWith('id')
 }
 
-function resolveLocale(): AppLocale {
-  const stored = getStoredLocale()
+export function resolveLocale(storedVal?: AppLocale | 'auto'): AppLocale {
+  const stored = storedVal ?? getStoredLocale()
   if (stored === 'auto')
     return typeof navigator !== 'undefined' && isIndonesianLanguage(navigator.language) ? 'idID' : 'enUS'
   // Validate stored locale against available locales; fall back to auto if invalid
   if (AVAILABLE_LOCALES.includes(stored as AppLocale))
-    return stored
+    return stored as AppLocale
   return typeof navigator !== 'undefined' && isIndonesianLanguage(navigator.language) ? 'idID' : 'enUS'
+}
+
+export function setAppLocale(target: AppLocale | 'auto'): AppLocale {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('lang', target)
+  }
+  const resolved = resolveLocale(target)
+  lang.global.locale.value = resolved
+  return resolved
 }
 
 const lang = createI18n({

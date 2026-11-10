@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Check, Globe, Laptop, Languages } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 // Separator is rendered inline as a styled div
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ThemeType, useAppStore } from '@/store/appStore'
+import { LanguageType, ThemeType, useAppStore } from '@/store/appStore'
 import AiSettings from '@/views/setting/ai-settings.vue'
 import JreDriverSection from '@/views/setting/jre-driver-section.vue'
 import McpBridge from '@/views/setting/mcp-bridge.vue'
@@ -17,7 +18,7 @@ const appStore = useAppStore()
 const { t, locale: _locale } = useI18n()
 
 const preferencesSaved = ref(false)
-watch(() => [appStore.themeType, appStore.editorConfig, appStore.queryConfig], () => {
+watch(() => [appStore.themeType, appStore.languageType, appStore.editorConfig, appStore.queryConfig], () => {
   preferencesSaved.value = true
 }, { deep: true })
 // --- Theme ---
@@ -32,7 +33,30 @@ const themeOptions = [
 const handleThemeChange = (theme: ThemeType) => appStore.setThemeType(theme)
 
 // --- Language ---
-// Note: Language change functionality removed - using i18n locale directly
+const currentLanguage = computed(() => appStore.languageType)
+
+const languageOptions = [
+  {
+    value: LanguageType.AUTO,
+    iconComponent: Laptop,
+    label: () => t('pages.settings.general.languages.auto'),
+    desc: 'System / Sistem',
+  },
+  {
+    value: LanguageType.EN_US,
+    iconComponent: Globe,
+    label: () => t('pages.settings.general.languages.enUS'),
+    desc: 'English (US)',
+  },
+  {
+    value: LanguageType.ID_ID,
+    iconComponent: Languages,
+    label: () => t('pages.settings.general.languages.idID'),
+    desc: 'Bahasa Indonesia (ID)',
+  },
+]
+
+const handleLanguageChange = (lang: LanguageType) => appStore.setLanguageType(lang)
 
 const fontSizeInput = ref(String(appStore.editorConfig.fontSize))
 const fontSizeError = ref('')
@@ -178,7 +202,7 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
           <!-- General Tab: Appearance + Editor + Query Execution -->
           <TabsContent value="general" class="mt-0 space-y-6">
             <Card>
-              <CardContent class="p-6">
+              <CardContent class="p-6 space-y-6">
                 <!-- Theme selector -->
                 <div class="space-y-3">
                   <Label>{{ t('pages.settings.general.theme') }}</Label>
@@ -220,6 +244,48 @@ const toggleAutoSave = () => appStore.setAutoSave(!appStore.queryConfig.autoSave
                       </div>
                       <p class="text-sm font-medium text-center">
                         {{ opt.label() }}
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Divider -->
+                <div class="border-t border-border/60" />
+
+                <!-- Language selector -->
+                <div class="space-y-3">
+                  <div>
+                    <Label class="text-sm font-medium">{{ t('pages.settings.general.language') }}</Label>
+                    <p class="text-xs text-muted-foreground mt-0.5">
+                      {{ t('pages.settings.general.languageHelp') }}
+                    </p>
+                  </div>
+
+                  <div class="gap-4 grid grid-cols-3">
+                    <button
+                      v-for="opt in languageOptions"
+                      :key="opt.value"
+                      type="button"
+                      class="p-3.5 border-2 rounded-lg cursor-pointer transition-colors relative flex flex-col justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-ring text-left"
+                      :class="currentLanguage === opt.value
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-muted-foreground bg-card'"
+                      @click="handleLanguageChange(opt.value)"
+                    >
+                      <div class="flex items-start justify-between w-full">
+                        <div class="flex items-center gap-2">
+                          <component :is="opt.iconComponent" class="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span class="text-sm font-medium">{{ opt.label() }}</span>
+                        </div>
+                        <div
+                          v-if="currentLanguage === opt.value"
+                          class="rounded-full bg-primary flex h-4 w-4 items-center justify-center shrink-0"
+                        >
+                          <Check class="h-2.5 w-2.5 text-primary-foreground stroke-[3]" />
+                        </div>
+                      </div>
+                      <p class="text-xs text-muted-foreground mt-2">
+                        {{ opt.desc }}
                       </p>
                     </button>
                   </div>

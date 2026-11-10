@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { storeApi } from '@/datasources/storeApi'
-import { lang } from '@/lang'
+import { lang, setAppLocale } from '@/lang'
 
 export enum ThemeType {
   AUTO = 'auto',
@@ -286,6 +286,7 @@ export const useAppStore = defineStore('app', {
     },
     setLanguageType(languageType: LanguageType) {
       this.languageType = languageType
+      setAppLocale(languageType as unknown as 'enUS' | 'idID' | 'auto')
     },
     setEditorConfig(config: Partial<EditorConfig>) {
       this.editorConfig = { ...this.editorConfig, ...config }

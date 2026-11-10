@@ -18,7 +18,7 @@ import { useEntitlementStore } from '@/store/entitlementStore'
 import { lang } from './lang'
 
 const appStore = useAppStore()
-const { themeType } = storeToRefs(appStore)
+const { themeType, languageType } = storeToRefs(appStore)
 const accountStore = useAccountStore()
 const entitlementStore = useEntitlementStore()
 const deviceStore = useDeviceStore()
@@ -27,6 +27,13 @@ const { checkForUpdates } = useAppUpdater()
 // Apply theme immediately on store hydration (before first render) and whenever it changes
 watch(themeType, (newTheme) => {
   appStore.setThemeType(newTheme)
+}, { immediate: true })
+
+// Apply language immediately on store hydration (before first render) and whenever it changes
+watch(languageType, (newLang) => {
+  if (newLang) {
+    appStore.setLanguageType(newLang)
+  }
 }, { immediate: true })
 
 const sessionLifecycle = createSessionLifecycle({
