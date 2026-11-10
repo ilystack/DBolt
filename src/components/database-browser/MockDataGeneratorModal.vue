@@ -3,20 +3,16 @@ import type { ColumnInfo } from '@/types/connection'
 import { invoke } from '@tauri-apps/api/core'
 import {
   AlertCircle,
-  AlertTriangle,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Copy,
   Database,
   Eye,
   FileCode,
-  Info,
   Play,
   RefreshCw,
   Wand2,
-  X,
 } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
@@ -63,46 +59,23 @@ const columns = ref<ColumnConfig[]>([])
 const copied = ref(false)
 const openModelDropdown = ref(false)
 
-// In-Card Notice / Toast State
-type CardNotice = {
-  type: 'info' | 'success' | 'warning' | 'error'
-  message: string
-}
-
-const cardNotice = ref<CardNotice | null>(null)
-let cardNoticeTimer: ReturnType<typeof setTimeout> | null = null
-
-function showCardNotice(type: 'info' | 'success' | 'warning' | 'error', message: string, duration = 3500) {
-  if (cardNoticeTimer) {
-    clearTimeout(cardNoticeTimer)
-    cardNoticeTimer = null
-  }
-  cardNotice.value = { type, message }
-  if (duration > 0) {
-    cardNoticeTimer = setTimeout(() => {
-      cardNotice.value = null
-      cardNoticeTimer = null
-    }, duration)
-  }
-}
-
 function handleOutsideInteraction(e: Event) {
   if (isGeneratingAi.value || executing.value) {
     e.preventDefault()
-    showCardNotice('warning', 'Proses generate data sedang berjalan. Mohon tunggu hingga selesai!')
+    toast.warning('Data generation is in progress. Please wait until it completes!')
   }
 }
 
 function handleEscapeKey(e: Event) {
   if (isGeneratingAi.value || executing.value) {
     e.preventDefault()
-    showCardNotice('warning', 'Proses generate data sedang berjalan. Mohon tunggu hingga selesai!')
+    toast.warning('Data generation is in progress. Please wait until it completes!')
   }
 }
 
 function handleDialogOpenChange(val: boolean) {
   if (!val && (isGeneratingAi.value || executing.value)) {
-    showCardNotice('warning', 'Proses generate data sedang berjalan. Mohon tunggu hingga selesai!')
+    toast.warning('Data generation is in progress. Please wait until it completes!')
     return
   }
   emit('update:open', val)
@@ -110,7 +83,7 @@ function handleDialogOpenChange(val: boolean) {
 
 function handleCancel() {
   if (isGeneratingAi.value || executing.value) {
-    showCardNotice('warning', 'Proses generate data sedang berjalan. Mohon tunggu hingga selesai!')
+    toast.warning('Data generation is in progress. Please wait until it completes!')
     return
   }
   emit('update:open', false)
@@ -216,7 +189,7 @@ async function onModelChange(modelId: string) {
       selectedModelId: modelId,
       useRecommendedModel: false,
     })
-    showCardNotice('success', 'Selected model updated')
+    toast.success('Selected model updated')
   }
   catch (err) {
     console.error('Failed to set model route:', err)
@@ -248,7 +221,7 @@ async function loadTableColumns() {
   }
   catch (err) {
     console.error('Failed to load table columns:', err)
-    showCardNotice('error', `Failed to load columns for table ${props.tableName}`)
+    toast.error(`Failed to load columns for table ${props.tableName}`)
   }
   finally {
     loading.value = false
@@ -257,11 +230,6 @@ async function loadTableColumns() {
 
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
-    cardNotice.value = null
-    if (cardNoticeTimer) {
-      clearTimeout(cardNoticeTimer)
-      cardNoticeTimer = null
-    }
     aiRows.value = null
     aiError.value = null
     aiStep.value = 'idle'
@@ -380,7 +348,7 @@ function extractJsonArray(rawText: string): Record<string, unknown>[] {
 
 async function generateWithAi() {
   if (activeColumns.value.length === 0) {
-    showCardNotice('warning', 'Please select at least one column to generate')
+    toast.warning('Please select at least one column to generate')
     return
   }
 
@@ -485,14 +453,14 @@ Strictly NO markdown explanations, NO greeting, NO prose before or after the JSO
 
     aiStep.value = 'done'
     activeTab.value = 'preview_table'
-    showCardNotice('success', `Successfully generated ${aiRows.value.length} realistic records with AI!`)
+    toast.success(`Successfully generated ${aiRows.value.length} realistic records with AI!`)
   }
   catch (err) {
     console.error('Failed to generate mock data with AI:', err)
     aiStep.value = 'error'
     const msg = err instanceof Error ? err.message : String(err)
     aiError.value = msg
-    showCardNotice('error', `AI generation error: ${msg}`)
+    toast.error(`AI generation error: ${msg}`)
   }
   finally {
     isGeneratingAi.value = false
@@ -519,11 +487,11 @@ async function copySql() {
   try {
     await navigator.clipboard.writeText(generatedSql.value)
     copied.value = true
-    showCardNotice('success', 'Generated SQL copied to clipboard')
+    toast.success('Generated SQL copied to clipboard')
     setTimeout(() => (copied.value = false), 2000)
   }
   catch {
-    showCardNotice('error', 'Failed to copy SQL')
+    toast.error('Failed to copy SQL')
   }
 }
 
@@ -537,7 +505,7 @@ function openInEditor() {
 
 async function insertDirectly() {
   if (activeColumns.value.length === 0) {
-    showCardNotice('warning', 'Please select at least one column to insert')
+    toast.warning('Please select at least one column to insert')
     return
   }
 
@@ -555,7 +523,7 @@ async function insertDirectly() {
   }
   catch (err) {
     console.error('Insert mock data error:', err)
-    showCardNotice('error', `Failed to insert data: ${err instanceof Error ? err.message : String(err)}`)
+    toast.error(`Failed to insert data: ${err instanceof Error ? err.message : String(err)}`)
   }
   finally {
     executing.value = false
@@ -572,44 +540,6 @@ async function insertDirectly() {
       @interact-outside="handleOutsideInteraction"
       @escape-key-down="handleEscapeKey"
     >
-      <!-- In-Card Toast Notification / Alert -->
-      <Transition
-        enter-active-class="transition duration-200 ease-out"
-        enter-from-class="opacity-0 -translate-y-2 scale-95"
-        enter-to-class="opacity-100 translate-y-0 scale-100"
-        leave-active-class="transition duration-150 ease-in"
-        leave-from-class="opacity-100 translate-y-0 scale-100"
-        leave-to-class="opacity-0 -translate-y-2 scale-95"
-      >
-        <div
-          v-if="cardNotice"
-          class="absolute top-3 left-1/2 -translate-x-1/2 z-[100] max-w-[90%] pointer-events-auto"
-        >
-          <div
-            class="px-3.5 py-1.5 rounded-lg shadow-xl border text-xs flex items-center gap-2 backdrop-blur-md"
-            :class="{
-              'bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400': cardNotice.type === 'warning',
-              'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400': cardNotice.type === 'success',
-              'bg-destructive/15 border-destructive/30 text-destructive': cardNotice.type === 'error',
-              'bg-primary/15 border-primary/30 text-primary': cardNotice.type === 'info',
-            }"
-          >
-            <AlertTriangle v-if="cardNotice.type === 'warning'" class="h-4 w-4 shrink-0" />
-            <CheckCircle2 v-else-if="cardNotice.type === 'success'" class="h-4 w-4 shrink-0" />
-            <AlertCircle v-else-if="cardNotice.type === 'error'" class="h-4 w-4 shrink-0" />
-            <Info v-else class="h-4 w-4 shrink-0" />
-            <span class="font-medium">{{ cardNotice.message }}</span>
-            <button
-              type="button"
-              class="ml-1 opacity-70 hover:opacity-100 transition-opacity"
-              @click="cardNotice = null"
-            >
-              <X class="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      </Transition>
-
       <!-- Modal Header -->
       <div class="px-5 py-3 border-b bg-muted/20 flex shrink-0 items-center justify-between">
         <DialogTitle class="text-sm text-foreground font-semibold flex gap-2 items-center">
@@ -636,7 +566,7 @@ async function insertDirectly() {
         </div>
       </div>
 
-      <!-- Navigation Tabs Bar (Hanya muncul ketika sudah ada data AI untuk preview) -->
+      <!-- Navigation Tabs Bar (Only visible when AI rows are available for preview) -->
       <div v-if="aiRows" class="text-xs font-medium px-5 pt-3 pb-0 border-b bg-card/20 flex shrink-0 gap-6">
         <button
           type="button"
@@ -890,7 +820,7 @@ async function insertDirectly() {
 
       <!-- BOTTOM ACTION BAR / FOOTER -->
       <div class="px-5 py-3 border-t bg-muted/20 flex shrink-0 items-center justify-between gap-4">
-        <!-- FOOTER KIRI: Model Picker -->
+        <!-- Footer Left: Model Picker -->
         <div class="flex items-center gap-2">
           <span class="text-xs text-muted-foreground font-medium">
             <span>Model:</span>
@@ -938,8 +868,8 @@ async function insertDirectly() {
           </div>
         </div>
 
-        <!-- FOOTER KANAN: Action Buttons -->
-        <!-- Skenario 1: Sebelum Generate Data -->
+        <!-- Footer Right: Action Buttons -->
+        <!-- Scenario 1: Before Data Generation -->
         <div v-if="!aiRows" class="flex items-center gap-2">
           <Button
             size="sm"
@@ -963,7 +893,7 @@ async function insertDirectly() {
           </Button>
         </div>
 
-        <!-- Skenario 2: Setelah Data AI Berhasil di-generate -->
+        <!-- Scenario 2: After AI Data Generated -->
         <div v-else class="flex items-center gap-2">
           <Button
             variant="outline"
