@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Bot, LayoutList } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
@@ -49,7 +50,7 @@ const trafficLightInset = computed(() => {
         <Tooltip v-if="!hideAiButton">
           <TooltipTrigger as-child>
             <Button variant="ghost" size="icon" class="h-8 w-8" :aria-label="$t('aside.aiAssistant')" @click="emit('toggleAi')">
-              <span class="i-carbon-chat-bot h-4 w-4" />
+              <Bot class="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{{ $t('aside.aiAssistant') }}</TooltipContent>
@@ -58,7 +59,7 @@ const trafficLightInset = computed(() => {
         <Tooltip>
           <TooltipTrigger as-child>
             <Button variant="ghost" size="icon" class="h-8 w-8 relative" :aria-label="$t('transfer.tasks.title')" @click="emit('toggleTaskManager')">
-              <span class="i-carbon-list-boxes h-4 w-4" />
+              <LayoutList class="h-4 w-4" />
               <span
                 v-if="taskCount > 0"
                 class="text-caption text-white font-bold px-1 rounded-full bg-red-500 flex h-4 min-w-4 items-center justify-center absolute -right-0.5 -top-0.5"

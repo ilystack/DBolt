@@ -3,6 +3,7 @@
   Presents completion status, compact stat cards, and scrollable error logs (if any).
 -->
 <script setup lang="ts">
+import { FileText, Folder, List, RotateCcw, Table2 } from 'lucide-vue-next'
 import type { TransferResult } from '@/types/transfer'
 
 import { computed } from 'vue'
@@ -56,8 +57,8 @@ function formatDuration(seconds: number) {
         class="rounded-full flex h-6 w-6 items-center justify-center"
         :class="isSuccess ? 'bg-green-500/10 text-green-600' : 'bg-destructive/10 text-destructive'"
       >
-        <span v-if="isSuccess" class="i-carbon-checkmark-filled h-3.5 w-3.5" />
-        <span v-else class="i-carbon-warning-filled h-3.5 w-3.5" />
+        <CheckCircle2 v-if="isSuccess" class="h-3.5 w-3.5" />
+        <AlertOctagon v-else class="h-3.5 w-3.5" />
       </div>
       <div class="flex flex-1 items-center justify-between">
         <h3 class="text-sm tracking-wide font-medium">
@@ -103,7 +104,7 @@ function formatDuration(seconds: number) {
     <!-- Error Log -->
     <div v-if="props.result.errors.length > 0" class="space-y-1.5">
       <div class="px-1 flex gap-2 items-center">
-        <span class="i-carbon-list text-muted-foreground h-3.5 w-3.5" />
+        <List class="text-muted-foreground h-3.5 w-3.5" />
         <h4 class="text-caption text-muted-foreground tracking-wide font-medium uppercase">
           Log Details
         </h4>
@@ -130,16 +131,16 @@ function formatDuration(seconds: number) {
     <!-- Actions -->
     <div class="pt-3 border-t border-border/40 flex flex-wrap gap-2 items-center justify-end">
       <Button v-if="props.outputPath" variant="outline" size="sm" class="text-xs h-8" @click="emit('openFile')">
-        <span class="i-carbon-document mr-1.5" /> {{ t('transfer.result.openFile') }}
+        <FileText class="mr-1.5" /> {{ t('transfer.result.openFile') }}
       </Button>
       <Button v-if="props.outputPath" variant="outline" size="sm" class="text-xs h-8" @click="emit('openFolder')">
-        <span class="i-carbon-folder mr-1.5" /> {{ t('transfer.result.openFolder') }}
+        <Folder class="mr-1.5" /> {{ t('transfer.result.openFolder') }}
       </Button>
       <Button variant="outline" size="sm" class="text-xs h-8" @click="emit('viewTable')">
-        <span class="i-carbon-data-table mr-1.5" /> {{ t('transfer.result.viewTable') }}
+        <Table2 class="mr-1.5" /> {{ t('transfer.result.viewTable') }}
       </Button>
       <Button size="sm" class="text-xs h-8" @click="emit('again')">
-        <span class="i-carbon-reset mr-1.5" /> {{ props.outputPath ? t('transfer.result.exportAgain') : t('transfer.result.importAgain') }}
+        <RotateCcw class="mr-1.5" /> {{ props.outputPath ? t('transfer.result.exportAgain') : t('transfer.result.importAgain') }}
       </Button>
     </div>
   </div>

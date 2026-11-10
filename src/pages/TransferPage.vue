@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { FileUp, FileDown } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -21,8 +22,8 @@ const activeTab = computed({
 })
 
 const tabConfig = computed(() => [
-  { value: 'export', label: t('transfer.tabs.export'), icon: 'i-carbon-document-export' },
-  { value: 'import', label: t('transfer.tabs.import'), icon: 'i-carbon-document-import' },
+  { value: 'export', label: t('transfer.tabs.export'), icon: FileUp },
+  { value: 'import', label: t('transfer.tabs.import'), icon: FileDown },
 ])
 </script>
 
@@ -55,7 +56,7 @@ const tabConfig = computed(() => [
                   :value="tab.value"
                   class="text-xs font-medium px-4 rounded-md flex gap-2 h-full transition-colors items-center justify-center data-[state=active]:text-primary-text data-[state=active]:bg-background data-[state=active]:shadow-sm"
                 >
-                  <span :class="tab.icon" class="h-3.5 w-3.5" />
+                  <component :is="tab.icon" class="h-3.5 w-3.5" />
                   <span class="truncate">{{ tab.label }}</span>
                 </TabsTrigger>
               </TabsList>

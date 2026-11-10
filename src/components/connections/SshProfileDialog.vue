@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Eye, EyeOff, Folder } from 'lucide-vue-next'
 import type { SshProfile } from '@/store/sshProfileStore'
 import { open } from '@tauri-apps/plugin-dialog'
 import { computed, ref } from 'vue'
@@ -170,7 +171,7 @@ async function save() {
                 <div class="relative">
                   <Input id="profile-password" v-model="form.password" :type="showSecrets ? 'text' : 'password'" autocomplete="off" class="pr-8" />
                   <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="showSecrets = !showSecrets">
-                    <span :class="showSecrets ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
+                    <component :is="showSecrets  ? EyeOff : Eye" class="h-4 w-4 block" />
                   </button>
                 </div>
               </TabsContent>
@@ -183,7 +184,7 @@ async function save() {
                       <Input id="profile-key" v-model="form.keyPath" placeholder="/path/to/id_rsa" />
                     </div>
                     <Button variant="outline" size="icon" type="button" class="shrink-0" :title="t('common.browse')" @click="selectKeyFile">
-                      <span class="i-carbon-folder h-4 w-4" />
+                      <Folder class="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -192,7 +193,7 @@ async function save() {
                   <div class="relative">
                     <Input id="profile-passphrase" v-model="form.keyPassphrase" :type="showSecrets ? 'text' : 'password'" autocomplete="off" class="pr-8" />
                     <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="showSecrets = !showSecrets">
-                      <span :class="showSecrets ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
+                      <component :is="showSecrets  ? EyeOff : Eye" class="h-4 w-4 block" />
                     </button>
                   </div>
                 </div>
@@ -216,8 +217,8 @@ async function save() {
           class="text-xs leading-relaxed flex gap-1.5 break-words items-start"
           :class="testResult.success ? 'text-green-600 dark:text-green-400' : 'text-destructive'"
         >
-          <span v-if="testing" class="i-carbon-circle-dash mt-0.5 shrink-0 h-3.5 w-3.5 animate-spin" />
-          <span v-else class="i-carbon-network-3 mt-0.5 shrink-0 h-3.5 w-3.5" />
+          <Loader2 v-if="testing" class="mt-0.5 shrink-0 h-3.5 w-3.5 animate-spin" />
+          <Share2 v-else class="mt-0.5 shrink-0 h-3.5 w-3.5" />
           <span class="min-w-0">{{ testResult.success && testResult.user && testResult.host && testResult.port
             ? t('components.serverForm.ssh.testSuccess', {
               user: testResult.user,
@@ -239,8 +240,8 @@ async function save() {
           :disabled="testing || !valid"
           @click="testProfile"
         >
-          <span v-if="testing" class="i-carbon-circle-dash text-blue-500 h-3.5 w-3.5 animate-spin" />
-          <span v-else class="i-carbon-network-3 h-3.5 w-3.5" />
+          <Loader2 v-if="testing" class="text-blue-500 h-3.5 w-3.5 animate-spin" />
+          <Share2 v-else class="h-3.5 w-3.5" />
           {{ t('common.buttons.testConnection') }}
         </Button>
         <Button variant="outline" @click="dialogOpen = false">

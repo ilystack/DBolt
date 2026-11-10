@@ -1,17 +1,7 @@
 <script setup lang="ts">
 import type { ServerConnection } from '@/store/connectionStore'
 import { onClickOutside } from '@vueuse/core'
-import {
-  Bot,
-  Check,
-  ChevronDown,
-  FileText,
-  HelpCircle,
-  PanelRight,
-  Plus,
-  SquarePen,
-  Trash2,
-} from 'lucide-vue-next'
+import { Bot, Check, ChevronDown, DatabaseZap, FileText, HelpCircle, Link2, Lock, PanelRight, Plus, Search, Settings, Shield, Square, SquarePen, Trash2 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -423,7 +413,7 @@ function syncAllProviderModels() {
                     :title="t('dataStudio.agent.stop')"
                     @click="cancelSession"
                   >
-                    <span class="i-carbon-stop-filled h-3.5 w-3.5" />
+                    <Square class="h-3.5 w-3.5" />
                   </button>
                   <button
                     v-if="hasMessages"
@@ -471,7 +461,7 @@ function syncAllProviderModels() {
                     </div>
 
                     <div class="add-source-search-wrap">
-                      <span class="add-source-search-icon i-carbon-search h-3.5 w-3.5" />
+                      <Search class="add-source-search-icon h-3.5 w-3.5" />
                       <input
                         v-model="addSourceQuery"
                         class="add-source-search"
@@ -501,7 +491,7 @@ function syncAllProviderModels() {
                         </div>
                         <span
                           v-if="addSourceSelectedId === String(conn.id)"
-                          class="i-carbon-checkmark text-foreground ml-auto shrink-0 h-3.5 w-3.5"
+                          class="text-foreground ml-auto shrink-0 h-3.5 w-3.5"
                         />
                       </button>
                       <div v-if="filteredAddConnections.length === 0" class="add-source-empty">
@@ -511,7 +501,7 @@ function syncAllProviderModels() {
 
                     <div v-if="addSourceSelectedId" class="add-source-permissions">
                       <div class="add-source-permissions-header">
-                        <span class="i-carbon-security h-3.5 w-3.5" />
+                        <Shield class="h-3.5 w-3.5" />
                         <span class="text-xs font-semibold">
                           {{ t('dataStudio.modifySource.accessPermissions') }}
                         </span>
@@ -521,14 +511,14 @@ function syncAllProviderModels() {
                           class="mode-btn" :class="[addSourceMode === 'Ask' && 'mode-btn--active']"
                           @click="addSourceMode = 'Ask'"
                         >
-                          <span class="i-carbon-locked h-3.5 w-3.5" />
+                          <Lock class="h-3.5 w-3.5" />
                           <span>{{ t('aiPermissions.conversationReadOnly') }}</span>
                         </button>
                         <button
                           class="mode-btn" :class="[addSourceMode === 'Inherit' && 'mode-btn--active']"
                           @click="addSourceMode = 'Inherit'"
                         >
-                          <span class="i-carbon-link h-3.5 w-3.5" />
+                          <Link2 class="h-3.5 w-3.5" />
                           <span>{{ t('dataStudio.modifySource.inheritTitle') }}</span>
                         </button>
                       </div>
@@ -540,7 +530,7 @@ function syncAllProviderModels() {
                         :disabled="!addSourceSelectedId"
                         @click="confirmAddSource"
                       >
-                        <span class="i-carbon-data-connected h-3.5 w-3.5" />
+                        <DatabaseZap class="h-3.5 w-3.5" />
                         {{ t('dataStudio.addSource.connectSource') }}
                       </button>
                     </div>
@@ -562,7 +552,7 @@ function syncAllProviderModels() {
                   :alt="source.databaseType"
                 >
                 <span class="source-chip-name">{{ source.alias }}</span>
-                <span class="source-chip-edit i-carbon-settings h-3.5 w-3.5" />
+                <Settings class="source-chip-edit h-3.5 w-3.5" />
               </button>
             </template>
 
@@ -841,7 +831,7 @@ function syncAllProviderModels() {
   flex-shrink: 0;
 }
 
-.add-source-item-icon .i-carbon-data-base {
+.add-source-item-icon svg {
   color: hsl(var(--muted-foreground));
 }
 

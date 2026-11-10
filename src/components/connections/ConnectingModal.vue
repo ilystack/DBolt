@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertTriangle } from 'lucide-vue-next'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -156,7 +157,7 @@ defineExpose({
           class="text-sm text-amber-700 p-4 border border-amber-500/40 rounded-md bg-amber-500/10 w-full dark:text-amber-400"
         >
           <div class="flex gap-3 items-start">
-            <span class="i-carbon-warning mt-0.5 flex-shrink-0 h-5 w-5" />
+            <AlertTriangle class="mt-0.5 flex-shrink-0 h-5 w-5" />
             <div class="flex-1">
               <p class="opacity-90">
                 {{ errorHint }}

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Database, FileCode, FileCode2, FileSpreadsheet, FileText, Folder, Play } from 'lucide-vue-next'
 import type { ExportFormat, ExportSource, TransferResult, TransferScope } from '@/types/transfer'
 
 import { open } from '@tauri-apps/plugin-dialog'
@@ -82,11 +83,11 @@ const sourceSummary = computed(() => {
 })
 
 // Format options
-const formatOptions: { value: ExportFormat, label: string, icon: string }[] = [
-  { value: 'sql', label: 'SQL', icon: 'i-carbon-document-sql' },
-  { value: 'jsonl', label: 'JSONL', icon: 'i-carbon-document-json' },
-  { value: 'csv', label: 'CSV', icon: 'i-carbon-document-csv' },
-  { value: 'excel', label: 'XLS', icon: 'i-carbon-document-xls' },
+const formatOptions: { value: ExportFormat, label: string, icon: any }[] = [
+  { value: 'sql', label: 'SQL', icon: FileCode2 },
+  { value: 'jsonl', label: 'JSONL', icon: FileCode },
+  { value: 'csv', label: 'CSV', icon: FileSpreadsheet },
+  { value: 'excel', label: 'XLS', icon: FileSpreadsheet },
 ]
 
 // Browse output file or directory
@@ -219,7 +220,7 @@ async function startExport() {
     <TransferStepCard
       :title="t('transfer.export.step.source')"
       :step-number="1"
-      icon="i-carbon-data-base"
+      :icon="Database"
       icon-class="text-emerald-600 dark:text-emerald-500"
       :summary="sourceSummary"
       min-height="340px"
@@ -292,7 +293,7 @@ async function startExport() {
     <TransferStepCard
       :title="t('transfer.export.step.formatOutput')"
       :step-number="2"
-      icon="i-carbon-document"
+      :icon="FileText"
       icon-class="text-blue-600 dark:text-blue-500"
       min-height="180px"
     >
@@ -416,10 +417,10 @@ async function startExport() {
             <Label class="text-caption text-muted-foreground tracking-wide uppercase">{{ t('transfer.export.outputPath') }}</Label>
             <div class="flex gap-2 items-center">
               <Button variant="outline" size="sm" class="text-xs px-3 h-8" @click="handleBrowse">
-                <span class="i-carbon-folder mr-1.5" /> {{ t('common.buttons.browse') }}
+                <Folder class="mr-1.5" /> {{ t('common.buttons.browse') }}
               </Button>
               <div class="flex-1 relative">
-                <span class="i-carbon-document text-muted-foreground left-2.5 top-1/2 absolute -translate-y-1/2" />
+                <FileText class="text-muted-foreground left-2.5 top-1/2 absolute -translate-y-1/2" />
                 <Input
                   v-model="outputPath"
                   :placeholder="scope === 'tables' ? `/path/to/output.${selectedFormat === 'excel' ? 'xlsx' : selectedFormat}` : '/path/to/export/directory'"
@@ -441,7 +442,7 @@ async function startExport() {
             </Badge>
           </div>
           <Button size="sm" class="text-xs font-semibold px-5 h-8" :disabled="!canExport" @click="startExport">
-            <span class="i-carbon-play mr-1.5" /> {{ t('transfer.export.step.execute', 'Start Export') }}
+            <Play class="mr-1.5" /> {{ t('transfer.export.step.execute', 'Start Export') }}
           </Button>
         </div>
       </div>

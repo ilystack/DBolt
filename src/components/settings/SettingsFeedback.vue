@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { AlertCircle, LoaderCircle } from 'lucide-vue-next'
 import { computed } from 'vue'
+import CheckCircleTwotone from '@/components/icons/CheckCircleTwotone.vue'
 
 type Props = {
   state: 'idle' | 'pending' | 'success' | 'error'
@@ -18,9 +20,19 @@ const percent = computed(() => props.progress == null || !Number.isFinite(props.
   <Transition name="settings-feedback">
     <div v-if="state !== 'idle'" class="settings-feedback" :class="`is-${state}`" data-testid="settings-feedback">
       <div class="flex gap-2 min-w-0 items-start" :role="state === 'error' ? 'alert' : 'status'" aria-atomic="true">
-        <span
-          class="mt-0.5 shrink-0 h-4 w-4"
-          :class="state === 'pending' ? 'i-lucide-loader-circle settings-spinner' : state === 'error' ? 'i-lucide-circle-alert' : 'i-ant-design-check-circle-twotone'"
+        <LoaderCircle
+          v-if="state === 'pending'"
+          class="mt-0.5 shrink-0 h-4 w-4 settings-spinner"
+          aria-hidden="true"
+        />
+        <AlertCircle
+          v-else-if="state === 'error'"
+          class="mt-0.5 shrink-0 h-4 w-4 text-destructive-text"
+          aria-hidden="true"
+        />
+        <CheckCircleTwotone
+          v-else
+          class="mt-0.5 shrink-0 h-4 w-4 text-success"
           aria-hidden="true"
         />
         <div class="flex-1 min-w-0">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Clock, Plus, Trash2, X } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ChatPanel from '@/components/chat-panel.vue'
@@ -168,7 +169,7 @@ onUnmounted(() => {
               :title="t('dataStudio.history.newSession')"
               @click="handleNewSession"
             >
-              <span class="i-carbon-add h-3.5 w-3.5" />
+              <Plus class="h-3.5 w-3.5" />
             </button>
             <button
               class="header-icon-btn"
@@ -176,21 +177,21 @@ onUnmounted(() => {
               :title="t('dataStudio.history.title')"
               @click="historyPanelOpen = !historyPanelOpen"
             >
-              <span class="i-carbon-time h-3.5 w-3.5" />
+              <Clock class="h-3.5 w-3.5" />
             </button>
             <button
               class="header-icon-btn"
               :title="t('dataStudio.agent.clearChat')"
               @click="handleClearChat"
             >
-              <span class="i-carbon-trash-can h-3.5 w-3.5" />
+              <Trash2 class="h-3.5 w-3.5" />
             </button>
             <button
               class="header-icon-btn header-icon-btn--close"
               :title="t('common.buttons.close')"
               @click="handleClose"
             >
-              <span class="i-carbon-close h-3.5 w-3.5" />
+              <X class="h-3.5 w-3.5" />
             </button>
           </div>
         </div>

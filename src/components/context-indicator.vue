@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertCircle } from 'lucide-vue-next'
 import type { ContextUsage } from '@/datasources/agentApi'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -197,7 +198,7 @@ defineExpose({ refresh })
       </header>
 
       <div v-if="autoCompactOff && usage?.should_compact" class="context-indicator__warning">
-        <span class="i-carbon-warning-alt h-3.5 w-3.5" />
+        <AlertCircle class="h-3.5 w-3.5" />
         <span>{{ t('dataStudio.contextIndicator.warningText') || 'Context is over threshold but auto-compact is off' }}</span>
       </div>
 
@@ -236,7 +237,7 @@ defineExpose({ refresh })
           @click="onCompact"
         >
           <Spinner v-if="compacting" size="sm" />
-          <span v-else class="i-carbon-clean h-3.5 w-3.5" />
+          <Sparkles v-else class="h-3.5 w-3.5" />
           <span>
             {{
               compacting

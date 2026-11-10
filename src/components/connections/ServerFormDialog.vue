@@ -5,7 +5,7 @@ import type { DatabaseFileAssessment } from '@/utils/databaseFiles'
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { Check } from 'lucide-vue-next'
+import { AlertTriangle, Check, Eye, EyeOff, Loader2, Plug, RefreshCw, Settings, Table2, X } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { shouldStripSshTunnel, UPGRADE_URL } from '@/common'
@@ -1060,11 +1060,11 @@ function handleSave() {
         <Tabs :model-value="formSectionTab" @update:model-value="formSectionTab = $event as 'basic' | 'advanced'">
           <TabsList class="p-0.5 h-7 w-fit">
             <TabsTrigger value="basic" class="text-xs px-3 py-0 gap-1.5 h-6">
-              <span class="i-carbon-plug h-3.5 w-3.5" />
+              <Plug class="h-3.5 w-3.5" />
               {{ t('components.serverForm.basicTab') }}
             </TabsTrigger>
             <TabsTrigger value="advanced" class="text-xs px-3 py-0 gap-1.5 h-6">
-              <span class="i-carbon-settings h-3.5 w-3.5" />
+              <Settings class="h-3.5 w-3.5" />
               {{ t('components.serverForm.advancedTab') }}
             </TabsTrigger>
           </TabsList>
@@ -1409,7 +1409,7 @@ function handleSave() {
                           class="pr-8"
                         />
                         <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="togglePassword('wallet')">
-                          <span :class="showPasswords.wallet ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
+                          <component :is="showPasswords.wallet  ? EyeOff : Eye" class="h-4 w-4 block" />
                         </button>
                       </div>
                     </div>
@@ -1591,7 +1591,7 @@ function handleSave() {
                       v-if="conflictingDuckDbConnection"
                       class="text-xs text-amber-600 p-2 border border-amber-500/50 rounded-md flex gap-2 items-start dark:text-amber-500"
                     >
-                      <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
+                      <AlertTriangle class="mt-0.5 shrink-0 h-4 w-4" />
                       <div class="flex-1 space-y-1">
                         <p>{{ t('components.serverForm.duckdb.conflictingConnection', { name: conflictingDuckDbConnection.name }) }}</p>
                         <div class="flex gap-2">
@@ -1616,7 +1616,7 @@ function handleSave() {
                       {{ t('components.serverForm.duckdb.inMemoryHint') }}
                     </p>
                     <div class="text-xs p-2 border rounded-md flex gap-2 items-center">
-                      <span class="i-carbon-data-table text-muted-foreground shrink-0 h-4 w-4" />
+                      <Table2 class="text-muted-foreground shrink-0 h-4 w-4" />
                       <span class="text-muted-foreground">{{ t('components.serverForm.duckdb.inMemoryInstance') }}</span>
                       <span class="font-mono flex-1 truncate" :title="formData.host">{{ formData.host || '-' }}</span>
                     </div>
@@ -1644,7 +1644,7 @@ function handleSave() {
                   class="pr-8"
                 />
                 <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="togglePassword('db')">
-                  <span :class="showPasswords.db ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
+                  <component :is="showPasswords.db  ? EyeOff : Eye" class="h-4 w-4 block" />
                 </button>
               </div>
             </div>
@@ -1670,7 +1670,7 @@ function handleSave() {
                     class="pr-8"
                   />
                   <button type="button" class="text-muted-foreground right-2 top-1/2 absolute hover:text-foreground -translate-y-1/2" @click="togglePassword('db')">
-                    <span :class="showPasswords.db ? 'i-carbon-view-off' : 'i-carbon-view'" class="h-4 w-4 block" />
+                    <component :is="showPasswords.db  ? EyeOff : Eye" class="h-4 w-4 block" />
                   </button>
                 </div>
               </div>
@@ -1733,11 +1733,11 @@ function handleSave() {
               class="text-xs flex gap-2 min-w-0 items-center"
               :class="step.status === 'done' ? 'text-green-600 dark:text-green-400' : step.status === 'running' ? 'text-foreground' : step.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'"
             >
-              <span v-if="step.status === 'done'" class="i-carbon-checkmark shrink-0 h-3.5 w-3.5" />
-              <span v-else-if="step.status === 'running' && !step.progress" class="i-carbon-circle-dash shrink-0 h-3.5 w-3.5 animate-spin" />
-              <span v-else-if="step.status === 'running'" class="i-carbon-circle-dash text-blue-500 shrink-0 h-3.5 w-3.5 animate-spin" />
-              <span v-else-if="step.status === 'error'" class="i-carbon-close shrink-0 h-3.5 w-3.5" />
-              <span v-else class="i-carbon-circle-dash shrink-0 h-3.5 w-3.5" />
+              <Check v-if="step.status === 'done'" class="shrink-0 h-3.5 w-3.5" />
+              <Loader2 v-else-if="step.status === 'running' && !step.progress" class="shrink-0 h-3.5 w-3.5 animate-spin" />
+              <Loader2 v-else-if="step.status === 'running'" class="text-blue-500 shrink-0 h-3.5 w-3.5 animate-spin" />
+              <X v-else-if="step.status === 'error'" class="shrink-0 h-3.5 w-3.5" />
+              <Loader2 v-else class="shrink-0 h-3.5 w-3.5" />
               <span class="font-medium whitespace-nowrap">{{ t(step.label) }}</span>
               <!-- Spacer + progress bar: fill remaining space -->
               <span v-if="step.status === 'running' && step.progress" class="flex flex-1 gap-1.5 min-w-0 items-center">
@@ -1758,7 +1758,7 @@ function handleSave() {
                   :title="t('common.buttons.retry')"
                   @click="retryStep(step.id)"
                 >
-                  <span class="i-carbon-renew h-3.5 w-3.5" />
+                  <RefreshCw class="h-3.5 w-3.5" />
                 </button>
               </span>
             </div>
@@ -1766,24 +1766,24 @@ function handleSave() {
           <div class="space-y-1.5">
             <!-- Loading state during connection test (always visible when testing after steps) -->
             <div v-if="testStatus === 'testing'" class="text-xs text-blue-600 mt-1.5 pt-1 flex gap-1.5 items-center dark:text-blue-400" :class="{ 'border-t border-border/50': isJdbcDb }">
-              <span class="i-carbon-circle-dash shrink-0 h-3.5 w-3.5 animate-spin" />
+              <Loader2 class="shrink-0 h-3.5 w-3.5 animate-spin" />
               <span class="font-medium">{{ t('common.status.testing') }}</span>
             </div>
             <!-- Summary result -->
             <div v-if="testStatus === 'success'" class="text-xs text-green-600 mt-1.5 pt-1 flex gap-1.5 items-center dark:text-green-400" :class="{ 'border-t border-border/50': isJdbcDb }">
-              <span class="i-carbon-checkmark shrink-0 h-3.5 w-3.5" />
+              <Check class="shrink-0 h-3.5 w-3.5" />
               <span class="font-medium">{{ t('common.status.success') }}</span>
             </div>
             <div v-else-if="testStatus === 'error'" class="text-xs text-red-600 mt-1.5 pt-1 space-y-0.5 dark:text-red-400" :class="{ 'border-t border-border/50': isJdbcDb }">
               <div class="flex gap-1.5 items-center">
-                <span class="i-carbon-close shrink-0 h-3.5 w-3.5" />
+                <X class="shrink-0 h-3.5 w-3.5" />
                 <span class="font-medium">{{ t('common.status.failed') }}</span>
                 <button
                   type="button"
                   class="text-muted-foreground ml-1 inline-flex gap-0.5 cursor-pointer transition-colors items-center hover:text-foreground"
                   @click="handleTestConnection"
                 >
-                  <span class="i-carbon-renew h-3 w-3" />
+                  <RefreshCw class="h-3 w-3" />
                   <span class="text-xs">{{ t('common.buttons.retry') }}</span>
                 </button>
               </div>
@@ -1794,7 +1794,7 @@ function handleSave() {
                 v-if="testFailureHint"
                 class="text-xs text-amber-600 pl-5 flex gap-2 items-start dark:text-amber-500"
               >
-                <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
+                <AlertTriangle class="mt-0.5 shrink-0 h-4 w-4" />
                 <div class="flex-1 space-y-1">
                   <p>{{ t(testFailureHint.messageKey) }}</p>
                   <Button
@@ -1828,7 +1828,7 @@ function handleSave() {
           class="text-sm text-amber-700 mt-2 p-4 border border-amber-500/40 rounded-md bg-amber-500/10 dark:text-amber-400"
         >
           <div class="flex gap-3 items-start">
-            <span class="i-carbon-warning mt-0.5 flex-shrink-0 h-5 w-5" />
+            <AlertTriangle class="mt-0.5 flex-shrink-0 h-5 w-5" />
             <div class="flex-1">
               <p class="opacity-90">
                 {{ t('components.serverForm.ssh.tunnelSkippedHint') }}

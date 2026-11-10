@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ArrowDown, ArrowUp, Filter, FilterX, Sparkles, X } from 'lucide-vue-next'
 import type { ColumnFilter, ColumnHeaderContextMenuEmits, SortDirection } from '@/types/grid'
 import { onClickOutside } from '@vueuse/core'
 import { ref } from 'vue'
@@ -72,18 +73,18 @@ function handleFilterWithPrompt(operator: ColumnFilter['operator']) {
         <DropdownMenuContent align="start" class="min-w-48" @keydown.escape="emit('close')">
           <!-- Sort options -->
           <DropdownMenuItem :disabled="!sortable" @click="emit('sort', column, 'ASC'); emit('close')">
-            <span class="i-carbon-arrow-up mr-2 h-3.5 w-3.5" />
+            <ArrowUp class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.sort.asc') }}
           </DropdownMenuItem>
           <DropdownMenuItem :disabled="!sortable" @click="emit('sort', column, 'DESC'); emit('close')">
-            <span class="i-carbon-arrow-down mr-2 h-3.5 w-3.5" />
+            <ArrowDown class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.sort.desc') }}
           </DropdownMenuItem>
           <DropdownMenuItem
             v-if="currentSortDirection"
             @click="emit('clearSort'); emit('close')"
           >
-            <span class="i-carbon-close mr-2 h-3.5 w-3.5" />
+            <X class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.sort.clear') }}
           </DropdownMenuItem>
           <div v-if="!sortable" class="text-xs text-muted-foreground px-2 py-1.5">
@@ -94,27 +95,27 @@ function handleFilterWithPrompt(operator: ColumnFilter['operator']) {
 
           <!-- Filter options -->
           <DropdownMenuItem :disabled="filterable === false" @click="handleFilterWithPrompt('eq')">
-            <span class="i-carbon-filter mr-2 h-3.5 w-3.5" />
+            <Filter class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.filter.byValue') }}
           </DropdownMenuItem>
           <DropdownMenuItem :disabled="filterable === false" @click="handleFilterWithPrompt('like')">
-            <span class="i-carbon-filter-edit mr-2 h-3.5 w-3.5" />
+            <Filter class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.filter.byLike') }}
           </DropdownMenuItem>
           <DropdownMenuItem :disabled="filterable === false" @click="handleFilterWithPrompt('gte')">
-            <span class="i-carbon-filter-edit mr-2 h-3.5 w-3.5" />
+            <Filter class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.filter.greaterThan') }}
           </DropdownMenuItem>
           <DropdownMenuItem :disabled="filterable === false" @click="handleFilterWithPrompt('lte')">
-            <span class="i-carbon-filter-edit mr-2 h-3.5 w-3.5" />
+            <Filter class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.filter.lessThan') }}
           </DropdownMenuItem>
           <DropdownMenuItem :disabled="filterable === false" @click="handleFilterWithPrompt('between')">
-            <span class="i-carbon-filter-edit mr-2 h-3.5 w-3.5" />
+            <Filter class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.filter.between') }}
           </DropdownMenuItem>
           <DropdownMenuItem :disabled="filterable === false" @click="handleFilterWithPrompt('neq')">
-            <span class="i-carbon-filter-remove mr-2 h-3.5 w-3.5" />
+            <FilterX class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.filter.excludeValue') }}
           </DropdownMenuItem>
 
@@ -124,7 +125,7 @@ function handleFilterWithPrompt(operator: ColumnFilter['operator']) {
             v-if="hasActiveFilter"
             @click="emit('clearFilter', column); emit('close')"
           >
-            <span class="i-carbon-clean mr-2 h-3.5 w-3.5" />
+            <Sparkles class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.filter.clearFilter') }}
           </DropdownMenuItem>
         </DropdownMenuContent>

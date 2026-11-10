@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertCircle, AlertTriangle, Check, ExternalLink, FileText, Info, X } from 'lucide-vue-next'
 import type { DatabaseFileAssessment, DatabaseFileFormat, DatabaseFileProbe, RecentDatabaseEntry } from '@/utils/databaseFiles'
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
@@ -256,11 +257,11 @@ const toneClass: Record<StatusDescriptor['tone'], string> = {
   error: 'text-destructive',
 }
 
-const toneIcon: Record<StatusDescriptor['tone'], string> = {
-  info: 'i-carbon-information',
-  success: 'i-carbon-checkmark',
-  warning: 'i-carbon-warning',
-  error: 'i-carbon-warning-alt',
+const toneIcon: Record<StatusDescriptor['tone'], any> = {
+  info: Info,
+  success: Check,
+  warning: AlertTriangle,
+  error: AlertCircle,
 }
 </script>
 
@@ -290,7 +291,7 @@ const toneIcon: Record<StatusDescriptor['tone'], string> = {
     </p>
 
     <div v-if="status" class="text-xs flex gap-2 items-center" :class="toneClass[status.tone]">
-      <span class="shrink-0 h-3.5 w-3.5" :class="toneIcon[status.tone]" />
+      <component :is="toneIcon[status.tone]" class="shrink-0 h-3.5 w-3.5" />
       <span class="flex-1">{{ status.message }}</span>
       <Button
         v-if="status.action === 'create-directory'"
@@ -317,7 +318,7 @@ const toneIcon: Record<StatusDescriptor['tone'], string> = {
           class="group text-sm p-1 rounded flex gap-2 cursor-pointer items-center hover:bg-muted"
           @click="selectPath(entry.path)"
         >
-          <span class="i-carbon-document text-muted-foreground shrink-0 h-4 w-4" />
+          <FileText class="text-muted-foreground shrink-0 h-4 w-4" />
           <span class="flex-1 truncate" :title="entry.path">{{ entry.path }}</span>
           <button
             type="button"
@@ -325,7 +326,7 @@ const toneIcon: Record<StatusDescriptor['tone'], string> = {
             :title="t('components.serverForm.fileStatus.reveal')"
             @click.stop="revealDatabaseFile(entry.path)"
           >
-            <span class="i-carbon-launch h-4 w-4 block" />
+            <ExternalLink class="h-4 w-4 block" />
           </button>
           <button
             type="button"
@@ -333,7 +334,7 @@ const toneIcon: Record<StatusDescriptor['tone'], string> = {
             :title="t('components.serverForm.fileStatus.removeRecent')"
             @click.stop="removeRecentDatabase(entry.path)"
           >
-            <span class="i-carbon-close h-4 w-4 block" />
+            <X class="h-4 w-4 block" />
           </button>
         </div>
       </div>

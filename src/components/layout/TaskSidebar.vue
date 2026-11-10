@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Check, CheckCheck, CheckSquare, X } from 'lucide-vue-next'
 import type { BackgroundTask } from '@/types/transfer'
 import { onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -72,7 +73,7 @@ onUnmounted(() => {
       <!-- Header -->
       <div class="header-row">
         <div class="flex gap-2 items-center">
-          <span class="i-carbon-task text-muted-foreground h-4 w-4" />
+          <CheckSquare class="text-muted-foreground h-4 w-4" />
           <span class="header-title">{{ $t('aside.tasks') }}</span>
         </div>
         <div class="header-actions">
@@ -81,13 +82,13 @@ onUnmounted(() => {
             class="header-icon-btn"
             @click="transferStore.clearCompletedTasks()"
           >
-            <span class="i-carbon-checkmark h-4 w-4" />
+            <Check class="h-4 w-4" />
           </button>
           <button
             class="header-icon-btn"
             @click="emit('close')"
           >
-            <span class="i-carbon-close h-4 w-4" />
+            <X class="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -99,7 +100,7 @@ onUnmounted(() => {
           class="text-muted-foreground py-10 flex flex-col gap-3 items-center justify-center"
         >
           <div class="p-3 border border-border/40 rounded-full bg-muted/30">
-            <span class="i-carbon-task-complete opacity-40 h-6 w-6 block" />
+            <CheckCheck class="opacity-40 h-6 w-6 block" />
           </div>
           <div class="flex flex-col gap-1 items-center">
             <span class="text-xs text-foreground/60 font-medium">{{ t('transfer.tasks.noTasks') }}</span>

@@ -3,6 +3,7 @@
   Uses small checkboxes, tight rows, and muted ghost buttons for bulk actions.
 -->
 <script setup lang="ts">
+import { Loader2 } from 'lucide-vue-next'
 import { invoke } from '@tauri-apps/api/core'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -132,7 +133,7 @@ const isColumnSelected = (colName: string) => selectedColumns.value.includes(col
     </div>
 
     <div v-if="loading" class="text-caption text-muted-foreground p-6 border rounded-md border-dashed bg-muted/20 flex items-center justify-center">
-      <span class="i-carbon-circle-dash mr-1.5 animate-spin" /> Loading columns...
+      <Loader2 class="mr-1.5 animate-spin" /> Loading columns...
     </div>
 
     <div v-else class="scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border pr-2 gap-1.5 grid grid-cols-1 max-h-60 overflow-y-auto md:grid-cols-5 sm:grid-cols-3">

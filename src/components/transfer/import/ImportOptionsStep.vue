@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SlidersHorizontal, Table, Loader2 } from 'lucide-vue-next'
 import type { ConflictStrategy } from '@/types/transfer'
 
 import { computed, ref, watch } from 'vue'
@@ -75,7 +76,7 @@ watch(() => transferStore.importRequest.filePath, () => {
     <Card class="border-border/40 shadow-none">
       <CardContent class="p-3">
         <div class="text-xs tracking-wide font-semibold mb-3 flex gap-2 items-center">
-          <div class="i-carbon-settings-adjust" />
+          <SlidersHorizontal class="h-3.5 w-3.5" />
           {{ t('transfer.import.importSettings') }}
         </div>
 
@@ -129,7 +130,7 @@ watch(() => transferStore.importRequest.filePath, () => {
       <CardContent class="p-3">
         <div class="mb-2 flex items-center justify-between">
           <div class="text-xs tracking-wide font-semibold flex gap-2 items-center">
-            <div class="i-carbon-table" />
+            <Table class="h-3.5 w-3.5" />
             {{ t('transfer.import.dataPreview') }}
           </div>
           <span class="text-caption text-muted-foreground tracking-wide font-mono uppercase">{{ t('transfer.import.previewRows') }}</span>
@@ -156,7 +157,7 @@ watch(() => transferStore.importRequest.filePath, () => {
           </div>
           <div v-else class="text-caption text-muted-foreground py-6 text-center bg-muted/20">
             <div v-if="isLoading" class="flex flex-col gap-2 items-center justify-center">
-              <div class="i-carbon-circle-dash opacity-50 animate-spin" />
+              <Loader2 class="h-3.5 w-3.5 opacity-50 animate-spin" />
               {{ t('transfer.import.loadingPreview') }}
             </div>
             <span v-else>{{ t('transfer.import.noPreviewData') }}</span>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertTriangle } from 'lucide-vue-next'
 import type { HTMLAttributes } from 'vue'
 import {
   AlertDialog,
@@ -63,7 +64,7 @@ const confirmButtonClass = props.confirmVariant === 'warning'
               ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
               : 'bg-destructive/10 text-destructive'"
           >
-            <span class="i-carbon-warning h-5 w-5" />
+            <AlertTriangle class="h-5 w-5" />
           </div>
           <div class="flex-1 space-y-1">
             <AlertDialogTitle>{{ props.title }}</AlertDialogTitle>

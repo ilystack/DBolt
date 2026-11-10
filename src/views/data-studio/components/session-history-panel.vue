@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Plus, Trash2, X } from 'lucide-vue-next'
 import type { AgentSession } from '@/store/dataStudioStore'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
@@ -79,14 +80,14 @@ function formatTime(session: AgentSession): string {
           :title="t('dataStudio.history.newSession')"
           @click="emit('newSession')"
         >
-          <span class="i-carbon-add h-3.5 w-3.5" />
+          <Plus class="h-3.5 w-3.5" />
         </button>
         <button
           class="icon-btn"
           :title="t('common.buttons.close')"
           @click="emit('close')"
         >
-          <span class="i-carbon-close h-3.5 w-3.5" />
+          <X class="h-3.5 w-3.5" />
         </button>
       </div>
     </div>
@@ -111,7 +112,7 @@ function formatTime(session: AgentSession): string {
           :title="t('dataStudio.history.delete')"
           @click.stop="emit('delete', session.id)"
         >
-          <span class="i-carbon-trash-can h-3.5 w-3.5" />
+          <Trash2 class="h-3.5 w-3.5" />
         </button>
       </div>
     </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronDown, Code2, FileCode2, Split, Trash2 } from 'lucide-vue-next'
 import type { CopyFormat } from '@/types/grid'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -40,21 +41,20 @@ const exportMenuOpen = ref(false)
           <DropdownMenuTrigger as-child>
             <Button variant="outline" size="sm">
               {{ t('components.dataGrid.selection.exportSelected') }}
-              <span
-                class="i-carbon-chevron-down ml-1 h-3 w-3 transition-transform duration-200"
+              <ChevronDown class="ml-1 h-3 w-3 transition-transform duration-200"
                 :class="{ 'rotate-180': exportMenuOpen }"
               />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem @click="emit('exportSelected', 'csv')">
-              <span class="i-carbon-table-split mr-2 h-3.5 w-3.5" />{{ t('components.dataGrid.export.formatLabels.csv') }}
+              <Split class="mr-2 h-3.5 w-3.5" />{{ t('components.dataGrid.export.formatLabels.csv') }}
             </DropdownMenuItem>
             <DropdownMenuItem @click="emit('exportSelected', 'json')">
-              <span class="i-carbon-code mr-2 h-3.5 w-3.5" />{{ t('components.dataGrid.export.formatLabels.json') }}
+              <Code2 class="mr-2 h-3.5 w-3.5" />{{ t('components.dataGrid.export.formatLabels.json') }}
             </DropdownMenuItem>
             <DropdownMenuItem @click="emit('exportSelected', 'insert')">
-              <span class="i-carbon-sql mr-2 h-3.5 w-3.5" />{{ t('components.dataGrid.export.formatLabels.insert') }}
+              <FileCode2 class="mr-2 h-3.5 w-3.5" />{{ t('components.dataGrid.export.formatLabels.insert') }}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -63,7 +63,7 @@ const exportMenuOpen = ref(false)
           size="sm"
           @click="emit('deleteSelected')"
         >
-          <span class="i-carbon-trash-can mr-1 h-3.5 w-3.5" />
+          <Trash2 class="mr-1 h-3.5 w-3.5" />
           {{ t('components.dataGrid.selection.deleteSelected') }}
         </Button>
       </div>

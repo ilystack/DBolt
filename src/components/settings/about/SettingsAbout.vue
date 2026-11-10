@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ExternalLink } from 'lucide-vue-next'
 import { getVersion } from '@tauri-apps/api/app'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -77,7 +78,7 @@ onMounted(() => {
           </p>
         </div>
         <Button variant="outline" size="sm" :disabled="busy" @click="handleUpdate">
-          <span v-if="busy" class="i-carbon-circle-dash mr-2 shrink-0 h-4 w-4 animate-spin" aria-hidden="true" />
+          <Loader2 v-if="busy" class="mr-2 shrink-0 h-4 w-4 animate-spin" aria-hidden="true" />
           {{ updateLabel }}
         </Button>
       </div>
@@ -102,7 +103,7 @@ onMounted(() => {
       >
         <span class="font-medium">{{ t('pages.settings.about.repository') }}</span>
         <span class="text-muted-foreground flex gap-2 items-center">
-          ilystack/DBolt <span class="i-carbon-launch h-4 w-4" aria-hidden="true" />
+          ilystack/DBolt <ExternalLink class="h-4 w-4" aria-hidden="true" />
         </span>
       </a>
       <a
@@ -111,7 +112,7 @@ onMounted(() => {
       >
         <span class="font-medium">{{ t('pages.settings.about.website') }}</span>
         <span class="text-muted-foreground flex gap-2 items-center">
-          GitHub <span class="i-carbon-launch h-4 w-4" aria-hidden="true" />
+          GitHub <ExternalLink class="h-4 w-4" aria-hidden="true" />
         </span>
       </a>
       <p class="text-xs text-muted-foreground pt-2 text-center border-t border-border/40">

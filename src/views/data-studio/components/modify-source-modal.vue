@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Database, Unlink } from 'lucide-vue-next'
 import type { AiAction, AiPermissions } from '@/common'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -114,7 +115,7 @@ const retry = () => failedAction.value === 'load' ? load() : failedAction.value 
       <DialogHeader>
         <div class="flex gap-3 items-center">
           <div class="border border-border rounded-xl bg-muted flex shrink-0 h-10 w-10 items-center justify-center">
-            <span class="i-lucide-database h-5 w-5" />
+            <Database class="h-5 w-5" />
           </div>
           <div class="min-w-0">
             <DialogTitle>{{ t('dataStudio.modifySource.title') }}</DialogTitle>
@@ -194,7 +195,7 @@ const retry = () => failedAction.value === 'load' ? load() : failedAction.value 
           </span>
           <div class="flex gap-1.5">
             <Button type="button" variant="destructive" size="sm" :disabled="saving" @click="detach">
-              <span class="i-lucide-unlink mr-1 h-3.5 w-3.5" />
+              <Unlink class="mr-1 h-3.5 w-3.5" />
               {{ t('dataStudio.detachSource.confirm') }}
             </Button>
             <Button type="button" variant="outline" size="sm" :disabled="saving" @click="detachConfirming = false">
@@ -204,7 +205,7 @@ const retry = () => failedAction.value === 'load' ? load() : failedAction.value 
         </div>
         <template v-else>
           <Button type="button" variant="ghost" class="text-destructive-text mr-auto" :disabled="saving" @click="detachConfirming = true">
-            <span class="i-lucide-unlink mr-1.5 h-4 w-4" />
+            <Unlink class="mr-1.5 h-4 w-4" />
             {{ t('dataStudio.detachSource.title') }}
           </Button>
           <Button type="button" variant="outline" :disabled="saving" @click="emit('update:open', false)">

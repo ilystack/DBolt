@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Lock } from 'lucide-vue-next'
 import type { ServerConnection } from '@/store'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -229,7 +230,7 @@ const connectTooltip = computed(() =>
           <Tooltip>
             <TooltipTrigger as-child>
               <Badge variant="outline" class="text-xs">
-                <span class="i-carbon-locked mr-0.5 h-3 w-3" />
+                <Lock class="mr-0.5 h-3 w-3" />
                 SSH
               </Badge>
             </TooltipTrigger>

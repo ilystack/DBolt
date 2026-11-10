@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Check, ChevronDown } from 'lucide-vue-next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 type ModelCategory = 'general' | 'reasoning' | 'coding' | 'fast' | 'vision'
@@ -88,8 +89,8 @@ function selectModel(value: string) {
     <PopoverTrigger as-child>
       <button :class="triggerClasses">
         <span class="text-left truncate">{{ selectedLabel }}</span>
-        <span
-          class="i-carbon-chevron-down text-muted-foreground ml-1 shrink-0 h-3 w-3 transition-transform duration-200"
+        <ChevronDown
+          class="text-muted-foreground ml-1 shrink-0 h-3 w-3 transition-transform duration-200"
           :class="{ 'rotate-180': open }"
         />
       </button>
@@ -114,9 +115,9 @@ function selectModel(value: string) {
                 <span class="model-picker-name">{{ model.label }}</span>
                 <span v-if="model.category" class="model-picker-meta">{{ model.category }}</span>
               </div>
-              <span
+              <Check
                 v-if="model.id === modelValue"
-                class="model-picker-checkmark i-carbon-checkmark shrink-0 h-4 w-4"
+                class="model-picker-checkmark shrink-0 h-4 w-4"
               />
             </button>
           </div>

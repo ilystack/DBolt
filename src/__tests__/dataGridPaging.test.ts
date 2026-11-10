@@ -68,7 +68,7 @@ describe('paged result grid', () => {
 
   it('renders the requested page and sorts only its rows without mutating the result', async () => {
     const wrapper = mountGrid()
-    expect(wrapper.get('.i-carbon-chevron-sort').classes()).not.toContain('opacity-0')
+    expect(wrapper.get('.sort-icon-default').classes()).not.toContain('opacity-0')
     const pagination = wrapper.findComponent({ name: 'PaginationControls' })
     expect(wrapper.findAll('[data-index]')).toHaveLength(100)
     expect(pagination.props('pageCount')).toBe(3)
@@ -79,7 +79,7 @@ describe('paged result grid', () => {
     expect(wrapper.find('[role="status"]').text()).toContain('"start":201,"end":235,"total":"235"')
     const sortHeader = wrapper.findAll('button').find(button => button.text().includes('id'))!
     await sortHeader.trigger('click')
-    expect(wrapper.find('.i-carbon-arrow-up').exists()).toBe(true)
+    expect(wrapper.find('.sort-icon-asc').exists()).toBe(true)
     expect(wrapper.find('[data-index="0"]').text()).toContain('1')
     expect(rows[0].id).toBe(235)
     expect(rows[200].id).toBe(35)

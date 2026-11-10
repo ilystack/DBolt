@@ -11,7 +11,7 @@ import ScopeSelector from './ScopeSelector.vue'
 const props = defineProps<{
   title: string
   stepNumber?: number
-  icon?: string
+  icon?: any
   iconClass?: string
   summary?: string
   variant?: 'default' | 'highlight' | 'ghost'
@@ -45,7 +45,7 @@ const stepLabel = computed(() =>
     :style="{ minHeight }"
   >
     <div class="px-3 py-2 border-b border-border/40 flex gap-2.5 items-center">
-      <span v-if="icon" class="text-muted-foreground h-3.5 w-3.5" :class="[icon, iconClass]" />
+      <component :is="icon" v-if="icon" class="text-muted-foreground h-3.5 w-3.5" :class="iconClass" />
       <span v-if="stepLabel" class="text-caption text-muted-foreground tracking-wide font-mono px-1.5 rounded-sm bg-muted">
         {{ stepLabel }}
       </span>

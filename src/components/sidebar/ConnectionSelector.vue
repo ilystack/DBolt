@@ -50,13 +50,13 @@ type StatusInfo = { dotClass: string, tooltipKey: string }
 const statusInfo = computed<StatusInfo>(() => {
   switch (status.value) {
     case ConnectionStatus.CONNECTED:
-      return { dotClass: 'i-carbon-circle-filled text-green-500', tooltipKey: 'sidebar.connection.connected' }
+      return { dotClass: 'rounded-full inline-block text-green-500', tooltipKey: 'sidebar.connection.connected' }
     case ConnectionStatus.ERROR:
-      return { dotClass: 'i-carbon-circle-filled text-amber-500', tooltipKey: 'sidebar.connection.lost' }
+      return { dotClass: 'rounded-full inline-block text-amber-500', tooltipKey: 'sidebar.connection.lost' }
     case ConnectionStatus.CONNECTING:
-      return { dotClass: 'i-carbon-circle-filled text-amber-500 animate-pulse', tooltipKey: 'sidebar.connection.connecting' }
+      return { dotClass: 'rounded-full inline-block text-amber-500 animate-pulse', tooltipKey: 'sidebar.connection.connecting' }
     default:
-      return { dotClass: 'i-carbon-circle-filled text-muted-foreground', tooltipKey: 'sidebar.connection.disconnected' }
+      return { dotClass: 'rounded-full inline-block text-muted-foreground', tooltipKey: 'sidebar.connection.disconnected' }
   }
 })
 

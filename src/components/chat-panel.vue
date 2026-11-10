@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AgentToolCall, SessionProgress } from '@/store/dataStudioStore'
 import type { ChatMessage } from '@/types/chat'
-import { Bot, ShieldCheck, Square } from 'lucide-vue-next'
+import { AlertTriangle, Bot, PauseCircle, ShieldCheck, Square, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -351,13 +351,13 @@ onBeforeUnmount(() => {
 
             <!-- Error banner -->
             <div v-if="error" class="text-sm text-destructive-text mb-2 p-3 border border-destructive/20 rounded-lg bg-destructive/10 flex gap-2 max-w-[85%] w-fit items-start self-start">
-              <span class="i-carbon-warning mt-0.5 shrink-0 h-4 w-4" />
+              <AlertTriangle class="mt-0.5 shrink-0 h-4 w-4" />
               <span class="flex-1 min-w-0">{{ error }}</span>
               <button
                 class="text-destructive-text p-0.5 rounded shrink-0 transition-colors hover:text-destructive-text"
                 @click="emit('dismissError')"
               >
-                <span class="i-carbon-close h-3.5 w-3.5" />
+                <X class="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
@@ -367,7 +367,7 @@ onBeforeUnmount(() => {
       <!-- Stop banner -->
       <div v-if="stopReason && stopMessage" class="mx-4 mb-2 p-3 border rounded-xl flex gap-2 items-center justify-between" style="border-color: hsl(38 92% 50% / 0.35); background: hsl(38 92% 50% / 0.08);">
         <div class="flex gap-2 items-start">
-          <span class="i-carbon-pause-filled shrink-0 h-4 w-4" style="color: hsl(38 92% 50%);" />
+          <PauseCircle class="shrink-0 h-4 w-4" style="color: hsl(38 92% 50%);" />
           <div class="flex flex-col gap-0.5">
             <span class="text-xs font-medium">{{ stopMessage }}</span>
             <span class="text-caption text-muted-foreground">{{ t('dataStudio.agent.continueHint') }}</span>
@@ -397,12 +397,12 @@ onBeforeUnmount(() => {
     <!-- Bottom Card: Chat Input -->
     <div :class="isDataStudio ? 'w-full shrink-0' : 'chat-input-area'">
       <p v-if="awaitingDecision" role="status" class="text-xs text-warning mb-2 px-1 flex gap-2 items-center">
-        <span aria-hidden="true" class="i-carbon-pause shrink-0 h-4 w-4" />
+        <Pause aria-hidden="true" class="shrink-0 h-4 w-4" />
         {{ t('dataStudio.agent.message.awaitingPermissionDecision') }}
       </p>
       <div v-if="stopReason && stopMessage" class="loop-stopped-banner" role="status">
         <div class="loop-stopped-banner__body">
-          <span class="loop-stopped-banner__icon i-carbon-pause-filled" />
+          <PauseCircle class="loop-stopped-banner__icon" />
           <div class="loop-stopped-banner__texts">
             <span class="loop-stopped-banner__message">{{ stopMessage }}</span>
             <span class="loop-stopped-banner__hint">{{ t('dataStudio.agent.continueHint') }}</span>
@@ -483,7 +483,7 @@ onBeforeUnmount(() => {
               @click="isLoading ? emit('stopLoop') : sendMessage()"
             >
               <Square v-if="isLoading" class="h-3 w-3 fill-current" />
-              <span v-else class="i-carbon-arrow-up h-4 w-4" />
+              <ArrowUp v-else class="h-4 w-4" />
             </button>
           </div>
         </div>

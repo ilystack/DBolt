@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AiAction, AiPermissions } from '@/common'
 import { invoke } from '@tauri-apps/api/core'
+import { Check } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AI_ACTIONS, aiPreset, getAiPolicy } from '@/common'
@@ -104,7 +105,7 @@ const selectPreset = (value: string) => {
       </div>
       <div class="pt-3 border-t border-border flex flex-wrap gap-3 items-center justify-end">
         <p v-if="saved" role="status" class="text-xs text-muted-foreground mr-auto flex gap-1.5 items-center">
-          <span aria-hidden="true" class="i-lucide-check h-4 w-4" />
+          <Check aria-hidden="true" class="h-4 w-4 text-success" />
           {{ t('aiPermissions.saved') }}
         </p>
         <Button type="button" size="sm" :disabled="saving" @click="save">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { GitFork, Check, Minus } from 'lucide-vue-next'
 import type { ColumnMapping, ImportTarget } from '@/types/transfer'
 
 import { invoke } from '@tauri-apps/api/core'
@@ -135,7 +136,7 @@ watch(() => transferStore.importRequest.columnMappings, (newMappings) => {
     <div class="space-y-2">
       <div class="flex items-center justify-between">
         <div class="text-xs tracking-wide font-semibold flex gap-2 items-center">
-          <div class="i-carbon-flow-data" />
+          <GitFork class="h-3.5 w-3.5" />
           COLUMN MAPPING
         </div>
         <div class="flex gap-2">
@@ -212,11 +213,11 @@ watch(() => transferStore.importRequest.columnMappings, (newMappings) => {
               <td class="px-2 py-1 align-middle">
                 <span v-if="mapping.targetColumn" class="text-caption text-green-600 tracking-wide font-medium px-1.5 py-0.5 rounded-sm bg-green-500/10 flex w-fit uppercase items-center">
                   <span class="sr-only">Status: </span>
-                  <div class="i-carbon-checkmark mr-1" aria-hidden="true" /> Mapped
+                  <Check class="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Mapped
                 </span>
                 <span v-else class="text-caption text-muted-foreground tracking-wide font-medium px-1.5 py-0.5 rounded-sm bg-muted flex w-fit uppercase items-center">
                   <span class="sr-only">Status: </span>
-                  <div class="i-carbon-subtract mr-1" aria-hidden="true" /> Skipped
+                  <Minus class="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Skipped
                 </span>
               </td>
             </tr>

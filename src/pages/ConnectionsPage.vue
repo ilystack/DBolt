@@ -2,7 +2,7 @@
 import type { ServerConnection } from '@/store'
 import type { SshProfile } from '@/store/sshProfileStore'
 import { invoke } from '@tauri-apps/api/core'
-import { Pencil, Trash2 } from 'lucide-vue-next'
+import { Key, Pencil, Plus, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -386,7 +386,7 @@ function getConnectionStatus(connectionId: string | undefined): ConnectionStatus
                 </p>
               </div>
               <div class="rounded-lg bg-violet-100 flex h-10 w-10 items-center justify-center dark:bg-violet-900/30">
-                <span class="i-carbon-key text-violet-600 h-5 w-5 dark:text-violet-400" />
+                <Key class="text-violet-600 h-5 w-5 dark:text-violet-400" />
               </div>
             </div>
           </Card>
@@ -523,7 +523,7 @@ function getConnectionStatus(connectionId: string | undefined): ConnectionStatus
             @keydown.space.self.prevent="openProfileCreate"
           >
             <div class="text-muted-foreground flex gap-2 items-center">
-              <span class="i-carbon-add h-4 w-4" />
+              <Plus class="h-4 w-4" />
               <span class="text-sm">{{ t('connectionsPage.addSshProfile') }}</span>
             </div>
           </div>

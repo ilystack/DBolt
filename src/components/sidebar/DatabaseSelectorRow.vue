@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { BarChart3, Database, Download, Eye, FilePlus2, FileText, FolderOpen, FunctionSquare, MoreHorizontal, RefreshCw, Share, Table, Trash2 } from 'lucide-vue-next'
 import type { DbCapabilities } from './dbCapabilities'
 import type { ComboboxOption } from '@/components/ui/combobox'
 import { computed, ref, watch } from 'vue'
@@ -142,11 +143,11 @@ watch(() => props.connectionId, async (connId) => {
       @update:model-value="handleSelect"
     >
       <template #selected-prepend>
-        <span class="i-lucide-database text-yellow-500 mr-1.5 shrink-0 h-3.5 w-3.5" />
+        <Database class="text-yellow-500 mr-1.5 shrink-0 h-3.5 w-3.5" />
       </template>
       <template #option="{ option }">
         <div class="flex gap-1.5 w-full items-center">
-          <span class="i-lucide-database text-yellow-500 shrink-0 h-3.5 w-3.5" />
+          <Database class="text-yellow-500 shrink-0 h-3.5 w-3.5" />
           <span class="text-left flex-1 truncate">{{ option.label }}</span>
         </div>
       </template>
@@ -161,13 +162,13 @@ watch(() => props.connectionId, async (connId) => {
       :aria-label="t('sidebar.database.refreshTooltip')"
       @click="emit('refresh')"
     >
-      <span class="i-carbon-renew h-3.5 w-3.5" :class="{ 'animate-spin': isSpinning }" />
+      <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': isSpinning }" />
     </Button>
 
     <DropdownMenu>
       <DropdownMenuTrigger as-child>
         <Button variant="ghost" size="icon" class="shrink-0 h-7 w-7" :title="t('sidebar.actionMenu.label')" :aria-label="t('sidebar.actionMenu.label')">
-          <span class="i-carbon-overflow-menu-horizontal h-3.5 w-3.5" />
+          <MoreHorizontal class="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -176,37 +177,37 @@ watch(() => props.connectionId, async (connId) => {
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!props.modelValue" @click="handleAction('createScript')">
-          <span class="i-lucide-file-plus-2 mr-2" aria-hidden="true" /> {{ t('sidebar.actionMenu.createScript') }}
+          <FilePlus2 class="mr-2" aria-hidden="true" /> {{ t('sidebar.actionMenu.createScript') }}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem v-if="capabilities.newDatabase" @click="handleAction('newDatabase')">
-          <span class="i-carbon-data-base mr-2" /> {{ t('sidebar.actionMenu.newDatabase') }}
+          <Database class="mr-2" /> {{ t('sidebar.actionMenu.newDatabase') }}
         </DropdownMenuItem>
         <DropdownMenuItem v-if="capabilities.newSchema" @click="handleAction('newSchema')">
-          <span class="i-carbon-folder-open mr-2" /> {{ t('sidebar.actionMenu.newSchema') }}
+          <FolderOpen class="mr-2" /> {{ t('sidebar.actionMenu.newSchema') }}
         </DropdownMenuItem>
         <DropdownMenuItem @click="handleAction('newTable')">
-          <span class="i-carbon-table mr-2" /> {{ t('sidebar.actionMenu.newTable') }}
+          <Table class="mr-2" /> {{ t('sidebar.actionMenu.newTable') }}
         </DropdownMenuItem>
         <DropdownMenuItem v-if="capabilities.views" @click="handleAction('newView')">
-          <span class="i-carbon-view mr-2" /> {{ t('sidebar.actionMenu.newView') }}
+          <Eye class="mr-2" /> {{ t('sidebar.actionMenu.newView') }}
         </DropdownMenuItem>
         <DropdownMenuItem v-if="capabilities.functions" @click="handleAction('newFunction')">
-          <span class="i-carbon-function-math mr-2" /> {{ t('sidebar.actionMenu.newFunction') }}
+          <FunctionSquare class="mr-2" /> {{ t('sidebar.actionMenu.newFunction') }}
         </DropdownMenuItem>
         <DropdownMenuItem v-if="capabilities.procedures" @click="handleAction('newProcedure')">
-          <span class="i-carbon-document mr-2" /> {{ t('sidebar.actionMenu.newProcedure') }}
+          <FileText class="mr-2" /> {{ t('sidebar.actionMenu.newProcedure') }}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem :disabled="!props.modelValue" @click="handleAction('showErDiagram')">
-          <span class="i-carbon-data-vis-3 mr-2" /> {{ t('sidebar.actionMenu.showErDiagram') }}
+          <BarChart3 class="mr-2" /> {{ t('sidebar.actionMenu.showErDiagram') }}
         </DropdownMenuItem>
         <DropdownMenuSeparator v-if="capabilities.backup || capabilities.export" />
         <DropdownMenuItem v-if="capabilities.backup" @click="handleAction('backupDatabase')">
-          <span class="i-carbon-download mr-2" /> {{ t('sidebar.actionMenu.backupDatabase') }}
+          <Download class="mr-2" /> {{ t('sidebar.actionMenu.backupDatabase') }}
         </DropdownMenuItem>
         <DropdownMenuItem v-if="capabilities.export" @click="handleAction('exportDatabase')">
-          <span class="i-carbon-export mr-2" /> {{ t('sidebar.actionMenu.exportDatabase') }}
+          <Share class="mr-2" /> {{ t('sidebar.actionMenu.exportDatabase') }}
         </DropdownMenuItem>
         <DropdownMenuSeparator v-if="capabilities.dropDatabase" />
         <DropdownMenuItem
@@ -214,7 +215,7 @@ watch(() => props.connectionId, async (connId) => {
           class="text-destructive-text focus:text-destructive-text"
           @click="handleAction('dropDatabase')"
         >
-          <span class="i-carbon-trash-can mr-2" /> {{ t('sidebar.actionMenu.dropDatabase') }}
+          <Trash2 class="mr-2" /> {{ t('sidebar.actionMenu.dropDatabase') }}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

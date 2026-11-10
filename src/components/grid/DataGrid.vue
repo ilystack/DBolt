@@ -1,4 +1,22 @@
 <script setup lang="ts">
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronsUpDown,
+  Code2,
+  Copy,
+  Database,
+  FileCode2,
+  Filter,
+  Info,
+  MoreVertical,
+  Pencil,
+  Split,
+  Trash2,
+  X,
+} from 'lucide-vue-next'
 import type { ColumnFilter } from '@/types/grid'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useResizeObserver } from '@vueuse/core'
@@ -587,7 +605,7 @@ watch(sortableColumns, (columns) => {
       class="p-6 flex flex-1 items-center justify-center"
     >
       <div class="text-center space-y-3">
-        <span class="i-carbon-warning-alt text-destructive-text mx-auto h-8 w-8 block" />
+        <AlertCircle class="text-destructive-text mx-auto h-8 w-8 block" />
         <p class="text-sm text-destructive-text">
           {{ error }}
         </p>
@@ -603,7 +621,7 @@ watch(sortableColumns, (columns) => {
       class="flex flex-1 items-center justify-center"
     >
       <div class="text-muted-foreground text-center">
-        <span class="i-carbon-data-blank mx-auto mb-2 opacity-40 h-8 w-8 block" />
+        <Database class="mx-auto mb-2 opacity-40 h-8 w-8 block" />
         <p class="text-sm">
           {{ $t('components.dataGrid.empty') }}
         </p>
@@ -662,28 +680,22 @@ watch(sortableColumns, (columns) => {
                 class="flex flex-shrink-0 gap-1 items-center"
                 :class="getColumnAlignment(columnTypes?.[col]) === 'end' ? '-mr-3' : ''"
               >
-                <span
+                <ArrowUp
                   v-if="sort.getSortDirection(col) === 'ASC'"
-                  class="i-carbon-arrow-up flex-shrink-0 h-3 w-3"
+                  class="sort-icon-asc flex-shrink-0 h-3 w-3"
                 />
-                <span
+                <ArrowDown
                   v-else-if="sort.getSortDirection(col) === 'DESC'"
-                  class="i-carbon-arrow-down flex-shrink-0 h-3 w-3"
+                  class="sort-icon-desc flex-shrink-0 h-3 w-3"
                 />
-                <span
-                  v-else
-                  class="i-carbon-chevron-sort text-foreground/60 flex-shrink-0 h-3 w-3"
-                />
+                <ChevronsUpDown v-else class="sort-icon-default text-foreground/60 flex-shrink-0 h-3 w-3" />
                 <!-- Multi-sort priority -->
                 <span
                   v-if="isMultiSort && sort.getSortPriority(col)"
                   class="text-caption text-primary-text leading-tight font-bold px-1 rounded bg-primary/10 flex-shrink-0"
                 >{{ sort.getSortPriority(col) }}</span>
                 <!-- Filter indicator -->
-                <span
-                  v-if="filter.hasFilter(col)"
-                  class="i-carbon-filter text-blue-500 flex-shrink-0 h-3 w-3"
-                />
+                <Filter v-if="filter.hasFilter(col)" class="text-blue-500 flex-shrink-0 h-3 w-3" />
               </span>
             </button>
             <!-- Non-primitive columns (JSON/array/BLOB) cannot be sorted client-side -->
@@ -699,10 +711,7 @@ watch(sortableColumns, (columns) => {
                   {{ columnTypes?.[col] }}
                 </span>
               </span>
-              <span
-                v-if="filter.hasFilter(col)"
-                class="i-carbon-filter text-blue-500 flex-shrink-0 h-3 w-3"
-              />
+              <Filter v-if="filter.hasFilter(col)" class="text-blue-500 flex-shrink-0 h-3 w-3" />
             </div>
             <!-- Resize Handle -->
             <div
@@ -781,11 +790,8 @@ watch(sortableColumns, (columns) => {
                 :class="sortedRows[virtualRow.index][col] ? 'text-green-600' : 'text-red-400'"
                 class="inline-flex"
               >
-                <span
-                  v-if="sortedRows[virtualRow.index][col]"
-                  class="i-carbon-checkmark h-4 w-4"
-                />
-                <span v-else class="i-carbon-close h-4 w-4" />
+                <Check v-if="sortedRows[virtualRow.index][col]" class="h-4 w-4" />
+                <X v-else class="h-4 w-4" />
               </span>
 
               <!-- Number -->
@@ -832,35 +838,35 @@ watch(sortableColumns, (columns) => {
             >
               <DropdownMenu>
                 <DropdownMenuTrigger class="rounded flex h-6 w-6 items-center justify-center hover:bg-muted">
-                  <span class="i-carbon-overflow-menu-vertical h-3.5 w-3.5" />
+                  <MoreVertical class="h-3.5 w-3.5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" :side-offset="4">
                   <DropdownMenuItem @click="openEditDialog(virtualRow.index)">
-                    <span class="i-carbon-edit mr-2" />{{ $t('components.dataGrid.row.edit') }}
+                    <Pencil class="mr-2" />{{ $t('components.dataGrid.row.edit') }}
                   </DropdownMenuItem>
                   <DropdownMenuItem @click="openDuplicateDialog(virtualRow.index)">
-                    <span class="i-carbon-copy mr-2" />{{ $t('components.dataGrid.row.duplicate') }}
+                    <Copy class="mr-2" />{{ $t('components.dataGrid.row.duplicate') }}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem @click="openDetailsDialog(virtualRow.index)">
-                    <span class="i-carbon-information mr-2" />{{ $t('components.dataGrid.row.details') }}
+                    <Info class="mr-2" />{{ $t('components.dataGrid.row.details') }}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem @click="copyUtil.copyRowsAs([sortedRows[virtualRow.index]], columns, 'csv', tableName)">
-                    <span class="i-carbon-table-split mr-2" />{{ $t('components.dataGrid.row.copyAsCsv') }}
+                    <Split class="mr-2" />{{ $t('components.dataGrid.row.copyAsCsv') }}
                   </DropdownMenuItem>
                   <DropdownMenuItem @click="copyUtil.copyRowsAs([sortedRows[virtualRow.index]], columns, 'json', tableName)">
-                    <span class="i-carbon-code mr-2" />{{ $t('components.dataGrid.row.copyAsJson') }}
+                    <Code2 class="mr-2" />{{ $t('components.dataGrid.row.copyAsJson') }}
                   </DropdownMenuItem>
                   <DropdownMenuItem @click="copyUtil.copyRowsAs([sortedRows[virtualRow.index]], columns, 'insert', tableName)">
-                    <span class="i-carbon-sql mr-2" />{{ $t('components.dataGrid.row.copyAsInsert') }}
+                    <FileCode2 class="mr-2" />{{ $t('components.dataGrid.row.copyAsInsert') }}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     class="text-destructive-text focus:text-destructive-text"
                     @click="openDeleteDialog(virtualRow.index)"
                   >
-                    <span class="i-carbon-trash-can mr-2" />{{ $t('components.dataGrid.row.delete') }}
+                    <Trash2 class="mr-2" />{{ $t('components.dataGrid.row.delete') }}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

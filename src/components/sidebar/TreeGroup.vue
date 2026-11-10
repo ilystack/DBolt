@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { ChevronRight } from 'lucide-vue-next'
 
 type Props = {
   label: string
-  icon: string
+  icon: any
   iconColor: string
   count?: number
   defaultOpen?: boolean
@@ -32,11 +33,11 @@ function toggle() {
       class="text-xs text-muted-foreground font-medium px-2 py-1 rounded-none flex gap-1.5 w-full cursor-pointer items-center hover:bg-accent/40"
       @click="toggle"
     >
-      <span
-        class="i-carbon-chevron-right shrink-0 h-3 w-3 transition-transform"
+      <ChevronRight
+        class="shrink-0 h-3 w-3 transition-transform"
         :class="{ 'rotate-90': open }"
       />
-      <span class="shrink-0 h-3.5 w-3.5" :class="[icon, iconColor]" />
+      <component :is="icon" class="shrink-0 h-3.5 w-3.5" :class="iconColor" />
       <span class="text-left flex-1 truncate">{{ label }}</span>
       <span
         v-if="count !== undefined"

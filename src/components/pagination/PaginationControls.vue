@@ -12,6 +12,14 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { isValidPageSize, PAGE_SIZE_OPTIONS } from '@/composables/pagination'
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
   currentPage: number
@@ -36,10 +44,10 @@ const pageSizeLabel = computed(() => props.pageSize === 'all'
   : t('components.pagination.pageSize', { count: props.pageSize }))
 const validCustomSize = computed(() => isValidPageSize(Number(customSize.value), false, props.maxPageSize))
 const navigation = computed(() => [
-  { label: 'firstPage', icon: 'i-lucide-chevrons-left', page: 1, disabled: props.currentPage <= 1 },
-  { label: 'previousPage', icon: 'i-lucide-chevron-left', page: props.currentPage - 1, disabled: props.currentPage <= 1 },
-  { label: 'nextPage', icon: 'i-lucide-chevron-right', page: props.currentPage + 1, disabled: props.currentPage >= props.pageCount },
-  { label: 'lastPage', icon: 'i-lucide-chevrons-right', page: props.pageCount, disabled: props.currentPage >= props.pageCount },
+  { label: 'firstPage', icon: ChevronsLeft, page: 1, disabled: props.currentPage <= 1 },
+  { label: 'previousPage', icon: ChevronLeft, page: props.currentPage - 1, disabled: props.currentPage <= 1 },
+  { label: 'nextPage', icon: ChevronRight, page: props.currentPage + 1, disabled: props.currentPage >= props.pageCount },
+  { label: 'lastPage', icon: ChevronsRight, page: props.pageCount, disabled: props.currentPage >= props.pageCount },
 ])
 
 watch(() => [props.currentPage, props.pageCount, props.disabled], () => {
@@ -89,8 +97,8 @@ const applyCustomSize = () => {
             :aria-label="`${t('components.pagination.rowsPerPage')}: ${pageSizeLabel}`"
           >
             {{ pageSizeLabel }}
-            <span
-              class="i-lucide-chevron-down ml-1 h-3 w-3 transition-transform duration-200"
+            <ChevronDown
+              class="ml-1 h-3 w-3 transition-transform duration-200"
               :class="{ 'rotate-180': sizeMenuOpen }"
               aria-hidden="true"
             />
@@ -99,11 +107,11 @@ const applyCustomSize = () => {
         <DropdownMenuContent align="end" class="w-56">
           <DropdownMenuItem v-for="size in presets" :key="size" :aria-current="pageSize === size ? 'true' : undefined" @select="selectSize(size)">
             <span class="flex-1">{{ t('components.pagination.pageSize', { count: size }) }}</span>
-            <span v-if="pageSize === size" class="i-lucide-check h-3.5 w-3.5" aria-hidden="true" />
+            <Check v-if="pageSize === size" class="h-3.5 w-3.5" aria-hidden="true" />
           </DropdownMenuItem>
           <DropdownMenuItem v-if="allowAll" :aria-current="pageSize === 'all' ? 'true' : undefined" @select="selectSize('all')">
             <span class="flex-1">{{ t('components.pagination.showAll') }}</span>
-            <span v-if="pageSize === 'all'" class="i-lucide-check h-3.5 w-3.5" aria-hidden="true" />
+            <Check v-if="pageSize === 'all'" class="h-3.5 w-3.5" aria-hidden="true" />
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <form class="p-2 flex gap-2" @submit.prevent="applyCustomSize" @keydown="event => { if (event.key !== 'Escape') event.stopPropagation() }" @pointerdown.stop>
@@ -153,7 +161,7 @@ const applyCustomSize = () => {
           :title="t(`components.pagination.${action.label}`)"
           @click="emit('pageChange', action.page)"
         >
-          <span :class="action.icon" class="h-3.5 w-3.5" aria-hidden="true" />
+          <component :is="action.icon" class="h-3.5 w-3.5" aria-hidden="true" />
         </Button>
       </template>
     </nav>

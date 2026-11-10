@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ArrowRight, Cpu, FileDown, FileUp } from 'lucide-vue-next'
+
 import type { BackgroundTask } from '@/types/transfer'
 
 import { computed } from 'vue'
@@ -37,11 +39,11 @@ const progressPercent = computed(() =>
     : 0,
 )
 
-const icon = computed(() => {
+const iconComponent = computed(() => {
   switch (props.task.kind) {
-    case 'export': return 'i-carbon-document-export text-blue-500/80'
-    case 'import': return 'i-carbon-document-import text-purple-500/80'
-    default: return 'i-carbon-data-refinery text-orange-500/80'
+    case 'export': return { comp: FileUp, class: 'text-blue-500/80' }
+    case 'import': return { comp: FileDown, class: 'text-purple-500/80' }
+    default: return { comp: Cpu, class: 'text-orange-500/80' }
   }
 })
 
@@ -65,7 +67,7 @@ const timeAgo = computed(() => {
     <div class="flex flex-col space-y-2.5">
       <div class="flex items-center justify-between">
         <div class="flex gap-2 items-center">
-          <span :class="icon" class="h-3.5 w-3.5" />
+          <component :is="iconComponent.comp" class="h-3.5 w-3.5" :class="iconComponent.class" />
           <span class="text-xs font-medium">{{ props.task.label }}</span>
         </div>
         <Badge
@@ -114,7 +116,7 @@ const timeAgo = computed(() => {
           class="text-caption px-2.5 border-border/40 flex gap-1.5 h-7"
           @click="emit('goToTask')"
         >
-          <span class="i-carbon-arrow-right h-3 w-3" />
+          <ArrowRight class="h-3 w-3" />
           <span>{{ t('transfer.tasks.goToTask') }}</span>
         </Button>
       </div>

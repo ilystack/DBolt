@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Copy, Plus, Tag, X } from 'lucide-vue-next'
 import type { QueryTab } from '@/store/tabStore'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -364,7 +365,7 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
           :aria-label="t('common.buttons.close')"
           @click="handleCloseClick($event, tab)"
         >
-          <span class="i-lucide-x shrink-0 h-3 w-3" />
+          <X class="shrink-0 h-3 w-3" />
         </button>
       </div>
     </div>
@@ -378,7 +379,7 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
         :title="t('components.queryTabs.new')"
         @click="handleNewTab"
       >
-        <span class="i-lucide-plus shrink-0 h-3.5 w-3.5" />
+        <Plus class="shrink-0 h-3.5 w-3.5" />
         <span class="whitespace-nowrap">{{ t('components.queryTabs.new') }}</span>
       </Button>
     </div>
@@ -462,7 +463,7 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
             <!-- Duplicate Tab -->
             <DropdownMenuItem class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between" @click="handleContextAction('duplicate')">
               <div class="flex gap-2 items-center">
-                <span class="i-carbon-copy text-muted-foreground h-3.5 w-3.5" />
+                <Copy class="text-muted-foreground h-3.5 w-3.5" />
                 <span>{{ t('components.queryTabs.contextMenu.duplicate') }}</span>
               </div>
             </DropdownMenuItem>
@@ -470,7 +471,7 @@ const isActiveTab = (tabId: string) => props.activeTabId === tabId
             <!-- Copy Name -->
             <DropdownMenuItem class="text-xs px-2.5 py-1.5 flex gap-4 cursor-pointer items-center justify-between" @click="handleContextAction('copyName')">
               <div class="flex gap-2 items-center">
-                <span class="i-carbon-tag text-muted-foreground h-3.5 w-3.5" />
+                <Tag class="text-muted-foreground h-3.5 w-3.5" />
                 <span>{{ t('components.queryTabs.contextMenu.copyName') }}</span>
               </div>
             </DropdownMenuItem>

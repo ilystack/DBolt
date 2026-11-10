@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertTriangle, Archive, ArrowRight, Check, ChevronDown, Clock, Cloud, Database, FileSearch, Lightbulb, List, Loader2, Minus, PenLine, Pencil, RefreshCw, Repeat, Search, Terminal, Trash2 } from 'lucide-vue-next'
 import type { Directive } from 'vue'
 import type { AgentToolCall } from '@/store/dataStudioStore'
 import { computed, ref } from 'vue'
@@ -171,31 +172,18 @@ function formatToolArgs(tc: AgentToolCall): string {
   }
 }
 
-function toolIcon(toolName: string): string {
+function toolIcon(toolName: string): any {
   const name = toolName.toLowerCase()
-  if (name.includes('delete') || name.includes('remove'))
-    return 'i-carbon-trash-can'
-  if (
-    name.includes('index_document') || name.includes('insert') || name.includes('put')
-    || name.includes('create') || name.includes('write') || name.includes('save')
-  ) {
-    return 'i-carbon-edit'
-  }
-  if (name.includes('update') || name.includes('edit') || name.includes('modify'))
-    return 'i-carbon-pen'
-  if (name.includes('search') || name.includes('query') || name.includes('find'))
-    return 'i-carbon-search'
-  if (name.includes('read') || name.includes('open') || name.includes('view'))
-    return 'i-carbon-document-view'
-  if (name.includes('list') || name.includes('indices') || name.includes('index') || name.includes('describe'))
-    return 'i-carbon-list'
-  if (name.includes('execute') || name.includes('run') || name.includes('bash') || name.includes('command') || name.includes('shell'))
-    return 'i-carbon-terminal'
-  if (name.includes('fetch') || name.includes('http') || name.includes('request') || name.includes('web'))
-    return 'i-carbon-cloud'
-  if (name.includes('get'))
-    return 'i-carbon-document-view'
-  return 'i-carbon-data-base'
+  if (name.includes('delete') || name.includes('remove')) return Trash2
+  if (name.includes('index_document') || name.includes('insert') || name.includes('put') || name.includes('create') || name.includes('write') || name.includes('save')) return Pencil
+  if (name.includes('update') || name.includes('edit') || name.includes('modify')) return PenLine
+  if (name.includes('search') || name.includes('query') || name.includes('find')) return Search
+  if (name.includes('read') || name.includes('open') || name.includes('view')) return FileSearch
+  if (name.includes('list') || name.includes('indices') || name.includes('index') || name.includes('describe')) return List
+  if (name.includes('execute') || name.includes('run') || name.includes('bash') || name.includes('command') || name.includes('shell')) return Terminal
+  if (name.includes('fetch') || name.includes('http') || name.includes('request') || name.includes('web')) return Cloud
+  if (name.includes('get')) return FileSearch
+  return Database
 }
 
 function toolVerb(toolName: string, tc: AgentToolCall): string {
@@ -266,7 +254,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
       class="compaction-marker compaction-marker--in-progress"
     >
       <div class="compaction-row">
-        <span class="compaction-icon compaction-icon-pulsing i-carbon-archive" />
+        <Archive class="compaction-icon compaction-icon-pulsing" />
         <span class="compaction-label">
           {{ t('dataStudio.agent.message.compactionInProgress') }}
           <span class="inline-dots">
@@ -282,7 +270,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
       class="compaction-marker compaction-marker--in-progress"
     >
       <div class="compaction-row">
-        <span class="compaction-icon compaction-icon-pulsing i-carbon-circle-dash" />
+        <Loader2 class="compaction-icon compaction-icon-pulsing" />
         <span class="compaction-label">
           {{ t('dataStudio.agent.message.preparingInProgress') }}
           <span class="inline-dots">
@@ -295,13 +283,13 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
     </div>
     <div v-else-if="normalizedRole === 'system' && message.compaction" class="compaction-marker">
       <div class="compaction-row">
-        <span class="compaction-icon i-carbon-archive" />
+        <Archive class="compaction-icon" />
         <span class="compaction-label">
           {{ t('dataStudio.agent.message.compactionLabel', { trigger: t(`dataStudio.agent.message.compactionTrigger.${message.compaction.trigger}`) }) }}
         </span>
         <span class="compaction-delta">
           {{ formatTokens(message.compaction.preTokens) }}
-          <span class="delta-arrow i-carbon-arrow-right" />
+          <ArrowRight class="delta-arrow" />
           {{ formatTokens(message.compaction.postTokens) }}
           <span class="delta-saved">
             -{{ formatTokens(Math.max(0, message.compaction.preTokens - message.compaction.postTokens)) }}
@@ -312,7 +300,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
           class="compaction-toggle"
           @click="summaryOpen = !summaryOpen"
         >
-          <span class="compaction-chevron i-carbon-chevron-down" :class="{ open: summaryOpen }" />
+          <ChevronDown class="compaction-chevron" :class="{ open: summaryOpen }" />
           {{ t('dataStudio.agent.message.compactionSummary') }}
         </button>
       </div>
@@ -331,7 +319,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
           v-if="iterationIndex !== undefined && message.toolCalls?.length"
           class="iteration-header"
         >
-          <span class="iteration-icon i-carbon-repeat" />
+          <Repeat class="iteration-icon" />
           <span class="iteration-label">
             {{ t('dataStudio.agent.message.iterationLabel', { n: iterationIndex + 1 }) }}
           </span>
@@ -344,8 +332,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
           :open="isStreaming && !message.content && !!message.thinking"
         >
           <summary class="activity-item">
-            <span
-              class="activity-icon i-carbon-idea"
+            <Lightbulb class="activity-icon"
               :class="{ 'activity-icon-pulsing': activeState === 'waiting' }"
             />
             <span class="activity-label">
@@ -391,7 +378,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
                 </span>
               </span>
             </span>
-            <span v-if="message.thinking" class="activity-chevron i-carbon-chevron-down" />
+            <ChevronDown v-if="message.thinking" class="activity-chevron" />
           </summary>
           <div v-if="message.thinking" v-auto-stick class="activity-body thinking-body">
             <MarkdownRender :markdown="message.thinking" class="markdown-body" />
@@ -408,28 +395,28 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
             :open="tc.status === 'error' || tc.status === 'executing'"
           >
             <summary class="activity-item">
-              <span class="activity-icon" :class="toolIcon(tc.toolName)" />
+              <component :is="toolIcon(tc.toolName)" class="activity-icon" />
               <span class="tool-name-badge">{{ tc.toolName }}</span>
               <span class="activity-label tool-verb-label">{{ toolVerb(tc.toolName, tc) }}</span>
-              <span
+              <RefreshCw
                 v-if="tc.status === 'executing'"
-                class="activity-status-icon executing i-carbon-renew animate-spin"
+                class="activity-status-icon executing animate-spin"
               />
-              <span
+              <Clock
                 v-else-if="tc.status === 'pending'"
-                class="activity-status-icon pending i-carbon-time"
+                class="activity-status-icon pending"
               />
-              <span
+              <Check
                 v-else-if="tc.status === 'done'"
-                class="activity-status-icon done i-carbon-checkmark"
+                class="activity-status-icon done"
               />
-              <span
+              <AlertTriangle
                 v-else-if="tc.status === 'error'"
-                class="activity-status-icon error i-carbon-warning"
+                class="activity-status-icon error"
               />
-              <span
+              <Minus
                 v-else-if="tc.status === 'denied'"
-                class="activity-status-icon denied i-carbon-subtract"
+                class="activity-status-icon denied"
               />
               <span
                 v-if="tc.durationMs !== undefined && tc.status === 'done'"
@@ -447,7 +434,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
               >
                 {{ resultPreview(toolResultText(tc)!) }}
               </span>
-              <span class="activity-chevron i-carbon-chevron-down" />
+              <ChevronDown class="activity-chevron" />
             </summary>
             <div v-auto-stick class="activity-body tool-body-wrapper">
               <pre class="tool-args-pre">{{ formatToolArgs(tc) }}</pre>
@@ -467,7 +454,7 @@ function toolVerb(toolName: string, tc: AgentToolCall): string {
             :class="{ 'tool-outcome-notice--rejected': tc.denial?.kind === 'user' || tc.status === 'interrupted' }"
             role="alert"
           >
-            <span aria-hidden="true" class="i-carbon-warning shrink-0 h-4 w-4" />
+            <AlertTriangle aria-hidden="true" class="shrink-0 h-4 w-4" />
             <div class="min-w-0 space-y-2">
               <p class="leading-relaxed font-medium">
                 {{ outcomeTitle(tc) }}

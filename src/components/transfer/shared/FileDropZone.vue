@@ -3,6 +3,7 @@
   Uses subtle primary outlines and monospaced format badges on hover/drag.
 -->
 <script setup lang="ts">
+import { FolderOpen } from 'lucide-vue-next'
 import { getCurrentInstance, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -97,7 +98,7 @@ function handleFileInput(e: Event) {
           class="text-xs px-3 gap-1.5 h-7"
           @click="handleBrowseClick"
         >
-          <span class="i-carbon-folder-open h-3.5 w-3.5" />
+          <FolderOpen class="h-3.5 w-3.5" />
           {{ t('transfer.import.browseFiles') }}
         </Button>
       </div>

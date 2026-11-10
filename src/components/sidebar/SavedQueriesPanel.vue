@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronRight, File, Loader2, Plus } from 'lucide-vue-next'
 import type { SavedQueryInfo, SavedQueryMetadata } from '@/datasources/fileApi'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -217,12 +218,11 @@ defineExpose({ refresh: fetchFiles })
   <div class="flex flex-col h-full">
     <!-- Header -->
     <div class="px-2 py-1.5 border-b flex shrink-0 gap-2 items-center">
-      <span
-        class="i-carbon-chevron-right shrink-0 h-3 w-3 cursor-pointer transition-transform"
+      <ChevronRight class="shrink-0 h-3 w-3 cursor-pointer transition-transform"
         :class="{ 'rotate-90': !isCollapsed }"
         @click="toggleExpand"
       />
-      <span class="i-carbon-document-blank text-muted-foreground shrink-0 h-3.5 w-3.5" />
+      <File class="text-muted-foreground shrink-0 h-3.5 w-3.5" />
       <span class="text-xs text-muted-foreground font-semibold flex-1 cursor-pointer truncate uppercase" @click="toggleExpand">
         {{ t('sidebar.savedQueries.header') }}
       </span>
@@ -236,14 +236,14 @@ defineExpose({ refresh: fetchFiles })
         :title="t('sidebar.savedQueries.newQuery')"
         @click="emit('newQuery')"
       >
-        <span class="i-carbon-add h-3 w-3" />
+        <Plus class="h-3 w-3" />
       </Button>
     </div>
 
     <!-- Body (when expanded) -->
     <div v-if="!isCollapsed" class="flex-1 overflow-auto">
       <div v-if="loading" class="text-xs text-muted-foreground px-2 py-2 flex gap-2 items-center">
-        <span class="i-carbon-loading h-3 w-3 animate-spin" />
+        <Loader2 class="h-3 w-3 animate-spin" />
         {{ t('sidebar.loading') }}
       </div>
       <template v-else>

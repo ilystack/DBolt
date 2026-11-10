@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 import type { ExportFormat } from '@/types/transfer'
 
 import { ref, watch } from 'vue'
@@ -64,7 +65,7 @@ watch([selectedFormat, csvDelimiter, csvEncoding, csvIncludeHeader], () => {
     </div>
 
     <Button variant="ghost" size="sm" class="text-caption text-muted-foreground h-8 w-full" @click="showAdvanced = !showAdvanced">
-      <span :class="showAdvanced ? 'i-carbon-chevron-up' : 'i-carbon-chevron-down'" class="mr-1.5" />
+      <component :is="showAdvanced  ? ChevronUp : ChevronDown" class="mr-1.5" />
       {{ showAdvanced ? t('transfer.export.hideAdvanced') : t('transfer.export.showAdvanced') }}
     </Button>
 

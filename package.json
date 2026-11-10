@@ -69,7 +69,6 @@
     "test:ci": "jest --runInBand --ci --coverage --coverageReporters json-summary text html lcov"
   },
   "dependencies": {
-    "@iconify-json/lucide": "^1.2.114",
     "@monaco-editor/loader": "^1.7.0",
     "@tanstack/vue-virtual": "^3.13.28",
     "@tauri-apps/api": "^2.11.0",
@@ -106,9 +105,6 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^7.0.1",
-    "@iconify-json/carbon": "^1.2.23",
-    "@iconify-json/simple-icons": "^1.2.98",
-    "@iconify/json": "^2.2.482",
     "@tauri-apps/cli": "^2",
     "@types/dompurify": "^3.0.5",
     "@types/jest": "^29.5.14",

@@ -4,6 +4,7 @@
   Includes Select All/Deselect All controls.
 -->
 <script setup lang="ts">
+import { AlertCircle, CheckCircle2, Database, Loader2 } from 'lucide-vue-next'
 import type { TableInfo } from '@/store/databaseStore'
 
 import { invoke } from '@tauri-apps/api/core'
@@ -118,7 +119,7 @@ const someSelected = computed(() => selectionCount.value > 0 && selectionCount.v
     <div class="flex flex-1 flex-col min-h-0 overflow-hidden">
       <div v-if="error" class="p-4 border border-red-200 rounded-md bg-red-50 flex-1 dark:border-red-800 dark:bg-red-900/20">
         <div class="flex gap-3 items-start">
-          <span class="i-carbon-warning-alt text-lg text-red-600 shrink-0 dark:text-red-400" />
+          <AlertCircle class="text-lg text-red-600 shrink-0 dark:text-red-400" />
           <div>
             <p class="text-sm text-red-800 font-medium dark:text-red-200">
               {{ t('transfer.export.tables.loadFailed', 'Failed to load tables') }}
@@ -131,7 +132,7 @@ const someSelected = computed(() => selectionCount.value > 0 && selectionCount.v
       </div>
 
       <div v-else-if="loading" class="text-caption text-muted-foreground p-4 border rounded-md border-dashed bg-muted/20 flex flex-1 items-center justify-center">
-        <span class="i-carbon-circle-dash mr-1.5 animate-spin" /> Loading tables...
+        <Loader2 class="mr-1.5 animate-spin" /> Loading tables...
       </div>
 
       <div v-else-if="tables.length === 0" class="border border-border/40 rounded-md flex-1 overflow-hidden">
@@ -155,7 +156,7 @@ const someSelected = computed(() => selectionCount.value > 0 && selectionCount.v
           <tbody>
             <tr>
               <td colspan="4" class="text-caption text-muted-foreground px-2 py-6 text-center italic">
-                <span class="i-carbon-data-base mr-1.5 opacity-50" /> {{ t('transfer.common.noTablesFound') }}
+                <Database class="mr-1.5 opacity-50" /> {{ t('transfer.common.noTablesFound') }}
               </td>
             </tr>
           </tbody>
@@ -226,7 +227,7 @@ const someSelected = computed(() => selectionCount.value > 0 && selectionCount.v
 
     <!-- Selection Count Footer -->
     <div v-if="selectionCount > 0" class="text-caption text-primary-text font-mono font-semibold mt-2 flex shrink-0 gap-1 items-center">
-      <span class="i-carbon-checkmark-filled h-3 w-3" />
+      <CheckCircle2 class="h-3 w-3" />
       {{ selectionCount }} tables selected
     </div>
     <div v-else class="text-caption text-muted-foreground mt-2 shrink-0">

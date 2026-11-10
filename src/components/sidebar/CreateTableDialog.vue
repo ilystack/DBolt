@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChevronDown, ChevronUp, X } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
@@ -236,14 +237,14 @@ function handleCreate() {
                 :disabled="index === 0"
                 @click="moveColumn(index, -1)"
               >
-                <span class="i-lucide-chevron-up h-3 w-3" />
+                <ChevronUp class="h-3 w-3" />
               </button>
               <button
                 class="text-muted-foreground flex h-4 w-4 cursor-pointer items-center justify-center hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed"
                 :disabled="index === columns.length - 1"
                 @click="moveColumn(index, 1)"
               >
-                <span class="i-lucide-chevron-down h-3 w-3" />
+                <ChevronDown class="h-3 w-3" />
               </button>
             </div>
 
@@ -310,7 +311,7 @@ function handleCreate() {
                 :disabled="columns.length <= 1"
                 @click="removeColumn(col.id)"
               >
-                <span class="i-lucide-x h-3.5 w-3.5" />
+                <X class="h-3.5 w-3.5" />
               </button>
             </div>
           </div>

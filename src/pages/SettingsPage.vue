@@ -2,6 +2,7 @@
 import { Globe, Laptop, Languages } from 'lucide-vue-next'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import CheckCircleTwotone from '@/components/icons/CheckCircleTwotone.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { SettingsAbout } from '@/components/settings/about'
 import { Button } from '@/components/ui/button'
@@ -299,7 +300,7 @@ function handleApply() {
               class="text-xs text-muted-foreground flex gap-1.5 items-center"
               role="status"
             >
-              <span class="i-ant-design-check-circle-twotone text-success h-4 w-4" aria-hidden="true" />
+              <CheckCircleTwotone class="text-success h-4 w-4" aria-hidden="true" />
               {{ t('pages.settings.feedback.saved') }}
             </span>
           </div>
@@ -371,7 +372,7 @@ function handleApply() {
                           v-if="draftTheme === opt.value"
                           class="inset-0 absolute flex items-center justify-center pointer-events-none"
                         >
-                          <span class="i-ant-design-check-circle-twotone h-12 w-12 text-primary drop-shadow" />
+                          <CheckCircleTwotone class="h-12 w-12 text-primary drop-shadow" />
                         </div>
                       </div>
 
@@ -407,9 +408,9 @@ function handleApply() {
                     >
                       <!-- Center icon: besar dan tanpa background luar saat aktif -->
                       <div class="mb-2 flex items-center justify-center">
-                        <span
+                        <CheckCircleTwotone
                           v-if="draftLanguage === opt.value"
-                          class="i-ant-design-check-circle-twotone h-10 w-10 text-primary"
+                          class="h-10 w-10 text-primary"
                         />
                         <component
                           :is="opt.iconComponent"

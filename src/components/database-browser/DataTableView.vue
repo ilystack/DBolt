@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertCircle, CornerDownLeft, Loader2, Pencil, RefreshCw, Search, Split, Table, Trash2, Wand2, X } from 'lucide-vue-next'
 import type { PageSize } from '@/composables/pagination'
 import type { TableViewSubPage } from '@/store'
 import { invoke } from '@tauri-apps/api/core'
@@ -893,7 +894,7 @@ watch(
       <div class="px-3 py-1.5 border-b bg-muted/20 flex shrink-0 gap-1 items-center">
         <!-- Search input — searches across all columns -->
         <div class="flex-1 min-w-0 relative">
-          <span class="i-carbon-search text-muted-foreground h-3.5 w-3.5 pointer-events-none left-2 top-1/2 absolute -translate-y-1/2" />
+          <Search class="text-muted-foreground h-3.5 w-3.5 pointer-events-none left-2 top-1/2 absolute -translate-y-1/2" />
           <Input
             ref="searchInputRef"
             v-model="searchTerm"
@@ -907,7 +908,7 @@ watch(
             v-if="isSearching"
             class="text-muted-foreground right-2 top-1/2 absolute -translate-y-1/2"
           >
-            <span class="i-carbon-loading h-3.5 w-3.5 animate-spin" />
+            <Loader2 class="h-3.5 w-3.5 animate-spin" />
           </div>
           <!-- Clear search button (inside input, on the right) -->
           <button
@@ -916,7 +917,7 @@ watch(
             :title="t('components.dataTableView.clearSearch')"
             @click.stop="clearSearch"
           >
-            <span class="i-carbon-close h-3 w-3" />
+            <X class="h-3 w-3" />
           </button>
         </div>
 
@@ -929,7 +930,7 @@ watch(
           :title="t('components.dataTableView.refresh')"
           @click.stop="refresh"
         >
-          <span class="i-carbon-renew h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
+          <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': loading }" />
         </Button>
 
         <!-- Column visibility dropdown -->
@@ -941,7 +942,7 @@ watch(
             :title="t('components.dataTableView.columns')"
             @click.stop="showColumnMenu = !showColumnMenu"
           >
-            <span class="i-carbon-table-split h-3.5 w-3.5" />
+            <Split class="h-3.5 w-3.5" />
           </Button>
 
           <div
@@ -959,7 +960,7 @@ watch(
                 class="text-sm px-2 py-1 text-left rounded flex gap-2 w-full cursor-pointer items-center hover:bg-accent"
                 @click="toggleColumn(col)"
               >
-                <span v-if="!hiddenColumns.has(col)" class="i-carbon-checkmark text-primary-text flex-shrink-0 h-3 w-3" />
+                <Check v-if="!hiddenColumns.has(col)" class="text-primary-text flex-shrink-0 h-3 w-3" />
                 <span v-else class="flex-shrink-0 w-3 inline-block" />
                 <span class="truncate">{{ col }}</span>
               </button>
@@ -975,7 +976,7 @@ watch(
           class="text-xs flex-shrink-0 h-7"
           @click.stop="batchDeleteDialogOpen = true"
         >
-          <span class="i-carbon-trash-can mr-1 h-3.5 w-3.5" />
+          <Trash2 class="mr-1 h-3.5 w-3.5" />
           Delete Selected ({{ selectedRows.size }})
         </Button>
 
@@ -989,7 +990,7 @@ watch(
           @click.stop="exportCSV"
         >
           <Spinner v-if="isExporting" size="sm" />
-          <span v-else class="i-carbon-download h-3.5 w-3.5" />
+          <Download v-else class="h-3.5 w-3.5" />
         </Button>
 
         <!-- Mock Data Generator button -->
@@ -1000,7 +1001,7 @@ watch(
           title="Generate & Seed Mock Data"
           @click.stop="mockDataModalOpen = true"
         >
-          <span class="i-carbon-magic-wand text-primary h-3.5 w-3.5" />
+          <Wand2 class="text-primary h-3.5 w-3.5" />
           <span>Mock Data</span>
         </Button>
       </div>
@@ -1010,7 +1011,7 @@ watch(
         <!-- Connection error state -->
         <div v-if="connectionError" class="p-4 flex h-full items-center justify-center">
           <div class="text-center max-w-md">
-            <span class="i-carbon-enter text-muted-foreground mx-auto mb-4 h-12 w-12 block" />
+            <CornerDownLeft class="text-muted-foreground mx-auto mb-4 h-12 w-12 block" />
             <p class="text-sm text-muted-foreground mb-2">
               {{ t('components.dataTableView.connectionLost') }}
             </p>
@@ -1018,7 +1019,7 @@ watch(
               {{ connectionError }}
             </p>
             <Button size="sm" @click="handleRetry">
-              <span class="i-carbon-renew mr-1.5 h-3.5 w-3.5" />
+              <RefreshCw class="mr-1.5 h-3.5 w-3.5" />
               {{ t('components.dataTableView.reconnect') }}
             </Button>
           </div>
@@ -1027,7 +1028,7 @@ watch(
         <!-- Reconnecting state -->
         <div v-else-if="isReconnecting" class="p-4 flex h-full items-center justify-center">
           <div class="text-center">
-            <span class="i-carbon-loading text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
+            <Loader2 class="text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
             <p class="text-sm text-muted-foreground">
               {{ t('components.dataTableView.reconnecting') }}
             </p>
@@ -1040,7 +1041,7 @@ watch(
           class="bg-background/60 flex items-center inset-0 justify-center absolute z-10"
         >
           <div class="text-center">
-            <span class="i-carbon-loading text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
+            <Loader2 class="text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
             <p class="text-sm text-muted-foreground">
               {{ t('components.dataTableView.loading') }}
             </p>
@@ -1051,7 +1052,7 @@ watch(
         <div v-else-if="error" class="p-4">
           <div class="p-4 border border-red-200 rounded-md bg-red-50 dark:border-red-800 dark:bg-red-900/20">
             <div class="flex gap-3 items-start">
-              <span class="i-carbon-error text-red-600 mt-0.5 flex-shrink-0 h-5 w-5 dark:text-red-400" />
+              <AlertCircle class="text-red-600 mt-0.5 flex-shrink-0 h-5 w-5 dark:text-red-400" />
               <div>
                 <p class="text-sm text-red-800 font-medium dark:text-red-200">
                   {{ t('components.dataTableView.error') }}
@@ -1093,20 +1094,20 @@ watch(
                   :title="columnTypeMap[col] ? `${col} · ${columnTypeMap[col]}` : col"
                   @click="handleHeaderSort(col)"
                 >
-                  <span v-if="columnIsPK[col]" class="i-carbon-key text-amber-500 flex-shrink-0 h-3 w-3" />
+                  <Key v-if="columnIsPK[col]" class="text-amber-500 flex-shrink-0 h-3 w-3" />
                   <span class="col-name truncate">{{ col }}</span>
                   <span v-if="columnTypeMap[col]" class="col-type flex-shrink-0">{{ columnTypeMap[col] }}</span>
                   <span
                     v-if="sort.getSortDirection(col) === 'ASC'"
-                    class="i-carbon-arrow-up text-foreground flex-shrink-0 h-3 w-3"
+                    class="text-foreground flex-shrink-0 h-3 w-3"
                   />
                   <span
                     v-else-if="sort.getSortDirection(col) === 'DESC'"
-                    class="i-carbon-arrow-down text-foreground flex-shrink-0 h-3 w-3"
+                    class="text-foreground flex-shrink-0 h-3 w-3"
                   />
                   <span
                     v-else
-                    class="i-carbon-chevron-sort opacity-30 flex-shrink-0 h-3 w-3"
+                    class="opacity-30 flex-shrink-0 h-3 w-3"
                   />
                 </button>
                 <div
@@ -1114,7 +1115,7 @@ watch(
                   class="col-header-cell cursor-default"
                   :title="$t('components.dataGrid.sort.unsortable')"
                 >
-                  <span v-if="columnIsPK[col]" class="i-carbon-key text-amber-500 flex-shrink-0 h-3 w-3" />
+                  <Key v-if="columnIsPK[col]" class="text-amber-500 flex-shrink-0 h-3 w-3" />
                   <span class="col-name truncate">{{ col }}</span>
                   <span v-if="columnTypeMap[col]" class="col-type flex-shrink-0">{{ columnTypeMap[col] }}</span>
                 </div>
@@ -1163,7 +1164,7 @@ watch(
                     :title="t('components.dataTableView.editRow')"
                     @click.stop="openEditDialog(row)"
                   >
-                    <span class="i-carbon-edit h-3.5 w-3.5" />
+                    <Pencil class="h-3.5 w-3.5" />
                   </Button>
                   <!-- Delete button -->
                   <Button
@@ -1173,7 +1174,7 @@ watch(
                     :title="t('components.dataTableView.deleteRow')"
                     @click.stop="openDeleteDialog(row)"
                   >
-                    <span class="i-carbon-trash-can h-3.5 w-3.5" />
+                    <Trash2 class="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </td>
@@ -1187,7 +1188,7 @@ watch(
           class="flex h-full items-center justify-center"
         >
           <div class="text-muted-foreground text-center">
-            <span class="i-carbon-table mx-auto mb-2 opacity-50 h-8 w-8 block" />
+            <Table class="mx-auto mb-2 opacity-50 h-8 w-8 block" />
             <p class="text-sm">
               {{ t('components.dataTableView.noRows') }}
             </p>
@@ -1197,7 +1198,7 @@ watch(
         <!-- No data yet -->
         <div v-else class="flex h-full items-center justify-center">
           <div class="text-muted-foreground text-center">
-            <span class="i-carbon-loading text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
+            <Loader2 class="text-primary-text mx-auto mb-2 h-8 w-8 block animate-spin" />
           </div>
         </div>
       </div>
@@ -1320,7 +1321,7 @@ watch(
               <Label :for="`edit-field-${col}`" class="text-xs font-medium whitespace-nowrap">
                 {{ col }}<span v-if="columnTypeMap[col]" class="text-caption text-muted-foreground font-mono font-normal ml-1">{{ columnTypeMap[col] }}</span><span
                   v-if="columnIsPK[col]"
-                  class="i-carbon-key text-amber-500 ml-1.5 h-3 w-3 inline-block"
+                  class="text-amber-500 ml-1.5 h-3 w-3 inline-block"
                 />
               </Label>
               <div class="flex-1" />

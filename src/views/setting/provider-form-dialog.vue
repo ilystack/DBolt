@@ -545,8 +545,8 @@ watch(() => props.open, (open) => {
           :disabled="testingConnection || saving"
           @click="handleTestConnection"
         >
-          <span v-if="testingConnection" class="i-carbon-circle-dash mr-1.5 shrink-0 h-4 w-4 animate-spin" />
-          <span v-else class="i-carbon-checkmark-outline mr-1.5 shrink-0 h-4 w-4" />
+          <Loader2 v-if="testingConnection" class="mr-1.5 shrink-0 h-4 w-4 animate-spin" />
+          <CheckCircle v-else class="mr-1.5 shrink-0 h-4 w-4" />
           {{ t('common.buttons.testConnection') }}
         </Button>
         <div class="flex gap-2">

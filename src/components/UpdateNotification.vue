@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertTriangle, X } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
@@ -123,7 +124,7 @@ const buttonsDisabled = computed(() =>
       <div v-if="hasError" class="px-5 pb-3">
         <div class="px-3 py-2.5 border border-destructive/30 rounded-lg bg-destructive/10 space-y-1.5">
           <div class="flex gap-2 items-start">
-            <span class="i-carbon-warning text-destructive-text mt-0.5 shrink-0 h-4 w-4" />
+            <AlertTriangle class="text-destructive-text mt-0.5 shrink-0 h-4 w-4" />
             <div class="flex-1 min-w-0">
               <p class="text-xs text-destructive-text font-semibold">
                 {{ t('updater.installFailed') }}
@@ -137,7 +138,7 @@ const buttonsDisabled = computed(() =>
               :aria-label="t('common.buttons.dismiss')"
               @click="clearError"
             >
-              <span class="i-carbon-close h-3.5 w-3.5" />
+              <X class="h-3.5 w-3.5" />
             </button>
           </div>
           <p class="text-xs text-destructive-text pl-6">

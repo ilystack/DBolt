@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FileText } from 'lucide-vue-next'
 import type { FileDetectionResult } from '@/types/transfer'
 
 import { open } from '@tauri-apps/plugin-dialog'
@@ -90,7 +91,7 @@ watch(filePath, () => {
     <Card v-if="detectionResult" class="border-border/40 shadow-none">
       <CardContent class="p-3 space-y-3">
         <div class="text-xs tracking-wide font-semibold mb-2 flex gap-2 items-center">
-          <div class="i-carbon-document" />
+          <FileText class="h-3.5 w-3.5" />
           {{ t('transfer.import.fileDetails') }}
         </div>
 

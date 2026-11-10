@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertCircle, Check, Database, File, FileDown, FileJson, FileSpreadsheet, LockKeyhole, MoreHorizontal, X } from 'lucide-vue-next'
 import type { ColumnInfo } from '@/composables/sqlCompletion/metadata'
 import type { QueryResult } from '@/store/tabStore'
 import type { ApiError, ApiResponse } from '@/types/api'
@@ -110,11 +111,11 @@ const exportIconColors = {
   insert: 'text-emerald-600 dark:text-emerald-400',
 } as const
 const exportActions = [
-  { label: 'copyAllCsv', icon: 'i-lucide-file-spreadsheet', format: 'csv', download: false },
-  { label: 'copyAllJson', icon: 'i-lucide-file-json', format: 'json', download: false },
-  { label: 'copyAllInsert', icon: 'i-lucide-database', format: 'insert', download: false },
-  { label: 'exportCsv', icon: 'i-lucide-file-down', format: 'csv', download: true },
-  { label: 'exportJson', icon: 'i-lucide-file-down', format: 'json', download: true },
+  { label: 'copyAllCsv', icon: FileSpreadsheet, format: 'csv', download: false },
+  { label: 'copyAllJson', icon: FileJson, format: 'json', download: false },
+  { label: 'copyAllInsert', icon: Database, format: 'insert', download: false },
+  { label: 'exportCsv', icon: FileDown, format: 'csv', download: true },
+  { label: 'exportJson', icon: FileDown, format: 'json', download: true },
 ] as const
 
 const panelHeight = ref(300)
@@ -428,7 +429,7 @@ const handleExport = (action: typeof exportActions[number]) => {
               :title="t('components.queryResult.exportActions')"
               :disabled="!displayResults?.rows.length"
             >
-              <span class="i-lucide-ellipsis h-3.5 w-3.5" aria-hidden="true" />
+              <MoreHorizontal class="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -447,7 +448,7 @@ const handleExport = (action: typeof exportActions[number]) => {
         <Tooltip>
           <TooltipTrigger as-child>
             <Button variant="ghost" size="icon" class="text-muted-foreground shrink-0 h-6 w-6" :aria-label="t('components.queryResult.scriptReadOnly')">
-              <span class="i-lucide-lock-keyhole h-3 w-3" aria-hidden="true" />
+              <LockKeyhole class="h-3 w-3" aria-hidden="true" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{{ t('components.queryResult.scriptReadOnly') }}</TooltipContent>
@@ -461,7 +462,7 @@ const handleExport = (action: typeof exportActions[number]) => {
         :title="t('components.queryResult.close')"
         @click="close"
       >
-        <span class="i-lucide-x shrink-0 h-3.5 w-3.5" aria-hidden="true" />
+        <X class="shrink-0 h-3.5 w-3.5" aria-hidden="true" />
       </Button>
     </div>
 
@@ -483,7 +484,7 @@ const handleExport = (action: typeof exportActions[number]) => {
         <div v-else-if="displayError && !displayResults" class="p-4">
           <div class="p-4 border border-destructive/30 rounded-md bg-destructive/5">
             <div class="flex gap-3 items-start">
-              <span class="i-carbon-warning-alt text-destructive-text mt-0.5 flex-shrink-0 h-5 w-5" />
+              <AlertCircle class="text-destructive-text mt-0.5 flex-shrink-0 h-5 w-5" />
               <div>
                 <p
                   v-for="(line, index) in (typeof displayError === 'string' ? displayError : formatApiError(displayError, t)).split('\n\n')"
@@ -525,7 +526,7 @@ const handleExport = (action: typeof exportActions[number]) => {
         <!-- DML/DLL success (no columns returned) -->
         <div v-else-if="displayResults && displayResults.columns.length === 0" class="flex h-full items-center justify-center">
           <div class="text-muted-foreground text-center">
-            <span class="i-carbon-checkmark mx-auto mb-2 opacity-50 h-8 w-8 block" />
+            <Check class="mx-auto mb-2 opacity-50 h-8 w-8 block" />
             <p class="text-sm font-medium">
               {{ t('components.queryResult.success') }}
             </p>
@@ -535,7 +536,7 @@ const handleExport = (action: typeof exportActions[number]) => {
         <!-- No results (no query executed yet) -->
         <div v-else class="flex h-full items-center justify-center">
           <div class="text-muted-foreground text-center">
-            <span class="i-carbon-document-blank mx-auto mb-2 opacity-40 h-8 w-8 block" />
+            <File class="mx-auto mb-2 opacity-40 h-8 w-8 block" />
             <p class="text-sm">
               {{ t('components.queryResult.noResults') }}
             </p>

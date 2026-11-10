@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Code2, Copy, FileCode2, Filter, FilterX, Split } from 'lucide-vue-next'
 import type { CellContextMenuEmits, ColumnFilter } from '@/types/grid'
 import { onClickOutside } from '@vueuse/core'
 import { ref } from 'vue'
@@ -65,20 +66,20 @@ function closeAnd(fn: () => void) {
         <DropdownMenuTrigger />
         <DropdownMenuContent align="start" class="min-w-44" @keydown.escape="emit('close')">
           <DropdownMenuItem @click="closeAnd(() => copyCellValue(value))">
-            <span class="i-carbon-copy mr-2 h-3.5 w-3.5" />
+            <Copy class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.cell.copyValue') }}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem @click="closeAnd(() => { if (row) copyRowsAs([row], columns, 'csv', tableName) })">
-            <span class="i-carbon-table-split mr-2 h-3.5 w-3.5" />
+            <Split class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.row.copyAsCsv') }}
           </DropdownMenuItem>
           <DropdownMenuItem @click="closeAnd(() => { if (row) copyRowsAs([row], columns, 'json', tableName) })">
-            <span class="i-carbon-code mr-2 h-3.5 w-3.5" />
+            <Code2 class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.row.copyAsJson') }}
           </DropdownMenuItem>
           <DropdownMenuItem @click="closeAnd(() => { if (row) copyRowsAs([row], columns, 'insert', tableName) })">
-            <span class="i-carbon-sql mr-2 h-3.5 w-3.5" />
+            <FileCode2 class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.row.copyAsInsert') }}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -86,14 +87,14 @@ function closeAnd(fn: () => void) {
             :disabled="filterable === false"
             @click="closeAnd(() => emit('filter', { column, operator: 'eq', value: String(value) }))"
           >
-            <span class="i-carbon-filter mr-2 h-3.5 w-3.5" />
+            <Filter class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.cell.filterByValue') }}
           </DropdownMenuItem>
           <DropdownMenuItem
             :disabled="filterable === false"
             @click="closeAnd(() => emit('filter', { column, operator: 'neq', value: String(value) }))"
           >
-            <span class="i-carbon-filter-remove mr-2 h-3.5 w-3.5" />
+            <FilterX class="mr-2 h-3.5 w-3.5" />
             {{ t('components.dataGrid.cell.excludeValue') }}
           </DropdownMenuItem>
         </DropdownMenuContent>

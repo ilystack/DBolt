@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { FileDown, Database, SlidersHorizontal, GitFork, Check, Minus, Table, Loader2 } from 'lucide-vue-next'
 import type { ColumnMapping, ConflictStrategy, FileDetectionResult, ImportTarget, TransferProgress, TransferResult, TransferScope } from '@/types/transfer'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -378,7 +379,7 @@ onUnmounted(() => {
     <TransferStepCard
       :title="t('transfer.import.step.file', 'Source File')"
       :step-number="1"
-      icon="i-carbon-document-import"
+      :icon="FileDown"
       icon-class="text-emerald-600 dark:text-emerald-500"
       :summary="fileSummary"
     >
@@ -440,7 +441,7 @@ onUnmounted(() => {
     <TransferStepCard
       :title="t('transfer.import.step.mapping', 'Target & Mapping')"
       :step-number="2"
-      icon="i-carbon-data-base"
+      :icon="Database"
       icon-class="text-blue-600 dark:text-blue-500"
       :summary="targetSummary"
       :scope="scope"
@@ -501,7 +502,7 @@ onUnmounted(() => {
         <div v-if="table" class="mt-4 pt-4 border-t border-border/40 space-y-2">
           <div class="flex items-center justify-between">
             <div class="text-xs tracking-wide font-semibold flex gap-2 items-center">
-              <div class="i-carbon-flow-data" />
+              <GitFork class="h-3.5 w-3.5" />
               COLUMN MAPPING
             </div>
             <div class="flex gap-2">
@@ -578,11 +579,11 @@ onUnmounted(() => {
                   <td class="px-2 py-1 align-middle">
                     <span v-if="mapping.targetColumn" class="text-caption text-green-600 tracking-wide font-medium px-1.5 py-0.5 rounded-sm bg-green-500/10 flex w-fit uppercase items-center">
                       <span class="sr-only">Status: </span>
-                      <div class="i-carbon-checkmark mr-1" aria-hidden="true" /> Mapped
+                      <Check class="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Mapped
                     </span>
                     <span v-else class="text-caption text-muted-foreground tracking-wide font-medium px-1.5 py-0.5 rounded-sm bg-muted flex w-fit uppercase items-center">
                       <span class="sr-only">Status: </span>
-                      <div class="i-carbon-subtract mr-1" aria-hidden="true" /> Skipped
+                      <Minus class="mr-1 h-3.5 w-3.5" aria-hidden="true" /> Skipped
                     </span>
                   </td>
                 </tr>
@@ -602,7 +603,7 @@ onUnmounted(() => {
     <TransferStepCard
       :title="t('transfer.import.step.options', 'Options & Import')"
       :step-number="3"
-      icon="i-carbon-settings"
+      :icon="SlidersHorizontal"
       icon-class="text-amber-600 dark:text-amber-500"
       variant="highlight"
     >
@@ -685,7 +686,7 @@ onUnmounted(() => {
           <div class="mt-4 pt-3 border-t border-border/40">
             <div class="mb-2 flex items-center justify-between">
               <div class="text-xs tracking-wide font-semibold flex gap-2 items-center">
-                <div class="i-carbon-table" />
+                <Table class="h-3.5 w-3.5" />
                 {{ t('transfer.import.dataPreview') }}
               </div>
               <span class="text-caption text-muted-foreground tracking-wide font-mono uppercase">{{ t('transfer.import.previewRows') }}</span>
@@ -711,7 +712,7 @@ onUnmounted(() => {
               </div>
               <div v-else class="text-caption text-muted-foreground py-6 text-center bg-muted/20">
                 <div v-if="isLoadingPreview" class="flex flex-col gap-2 items-center justify-center">
-                  <div class="i-carbon-circle-dash opacity-50 animate-spin" />
+                  <Loader2 class="h-3.5 w-3.5 opacity-50 animate-spin" />
                   {{ t('transfer.import.loadingPreview') }}
                 </div>
                 <span v-else>{{ t('transfer.import.selectFileToPreview') }}</span>
@@ -722,7 +723,7 @@ onUnmounted(() => {
           <!-- Execute Button -->
           <div class="mt-4 pt-3 border-t border-border/40 flex justify-end">
             <Button :disabled="!canImport" size="sm" class="min-w-[120px]" @click="startImport">
-              <div class="i-carbon-document-import mr-2" /> {{ t('transfer.import.importData') }}
+              <FileDown class="mr-2 h-3.5 w-3.5" /> {{ t('transfer.import.importData') }}
             </Button>
           </div>
         </template>

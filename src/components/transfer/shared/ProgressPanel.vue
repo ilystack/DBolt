@@ -3,6 +3,7 @@
   Shows a thin progress bar, inline phase indicators, and monospaced time/row estimates.
 -->
 <script setup lang="ts">
+import { AlertCircle, Loader2 } from 'lucide-vue-next'
 import type { TransferProgress } from '@/types/transfer'
 
 import { computed } from 'vue'
@@ -50,7 +51,7 @@ function formatTime(seconds: number) {
   <div class="space-y-3">
     <div class="flex items-center justify-between">
       <div role="status" aria-live="polite" class="text-xs text-foreground font-medium flex gap-1.5 items-center">
-        <span class="i-carbon-circle-dash text-primary-text h-3.5 w-3.5" :class="{ 'animate-spin': props.isRunning }" />
+        <Loader2 class="text-primary-text h-3.5 w-3.5" :class="{ 'animate-spin': props.isRunning }" />
         <span>{{ props.progress?.phase || t('transfer.progress.preparing') }}</span>
       </div>
       <div class="text-caption text-muted-foreground font-mono tabular-nums" aria-live="off">
@@ -90,7 +91,7 @@ function formatTime(seconds: number) {
       role="alert"
       aria-live="assertive"
     >
-      <span class="i-carbon-warning-alt h-3 w-3" />
+      <AlertCircle class="h-3 w-3" />
       {{ props.progress.errorCount }} errors occurred
     </div>
 

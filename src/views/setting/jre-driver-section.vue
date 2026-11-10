@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Download, Laptop, RefreshCw, Trash2 } from 'lucide-vue-next'
 import type { BridgeStatus, DriverInfo, JreStatus, JreUpdateStatus } from '@/datasources'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -166,7 +167,7 @@ onMounted(() => {
         <CardDescription>{{ t('pages.settings.jre.description') }}</CardDescription>
       </div>
       <Button size="sm" variant="outline" :disabled="anyBusy" :aria-busy="task('refresh').state === 'pending'" @click="handleRefresh">
-        <span class="i-lucide-refresh-cw mr-2 h-3.5 w-3.5" :class="{ 'settings-action-spin': task('refresh').state === 'pending' }" aria-hidden="true" />
+        <RefreshCw class="mr-2 h-3.5 w-3.5" :class="{ 'settings-action-spin': task('refresh').state === 'pending' }" aria-hidden="true" />
         {{ t('pages.settings.jre.actions.refresh') }}
       </Button>
     </CardHeader>
@@ -199,20 +200,20 @@ onMounted(() => {
               </Badge>
               <div class="flex gap-1 items-center">
                 <Button size="sm" variant="ghost" :disabled="busy('jre') || loading.jre" :aria-label="t('pages.settings.jre.jreCard.actions.checkUpdates')" :title="t('pages.settings.jre.jreCard.actions.checkUpdates')" @click="handleCheckJreUpdates">
-                  <span class="i-lucide-refresh-cw h-4 w-4" aria-hidden="true" />
+                  <RefreshCw class="h-4 w-4" aria-hidden="true" />
                 </Button>
                 <Button v-if="jreStatus.source !== 'managed' || jreUpdate?.update_available" size="sm" variant="outline" :disabled="busy('jre') || loading.jre" @click="handleDownloadJre">
-                  <span class="i-lucide-download mr-2 h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.jre.jreCard.actions.download') }}
+                  <Download class="mr-2 h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.jre.jreCard.actions.download') }}
                 </Button>
                 <Button v-if="jreStatus.source === 'managed'" size="sm" variant="ghost" :disabled="anyBusy" :aria-label="t('pages.settings.jre.jreCard.actions.remove')" :title="t('pages.settings.jre.jreCard.actions.remove')" @click="handleRemoveJre">
-                  <span class="i-lucide-trash-2 h-4 w-4" aria-hidden="true" />
+                  <Trash2 class="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
             </div>
             <SettingsFeedback v-bind="downloadFeedback('jre')" />
           </div>
           <div class="px-4 py-3 flex gap-3 items-center">
-            <span class="i-lucide-laptop text-muted-foreground shrink-0 h-5 w-5" aria-hidden="true" />
+            <Laptop class="text-muted-foreground shrink-0 h-5 w-5" aria-hidden="true" />
             <div class="flex-1 min-w-0">
               <p class="text-sm font-medium">
                 {{ t('pages.settings.jre.jreCard.status.system') }}
@@ -248,10 +249,10 @@ onMounted(() => {
           </Badge>
           <span v-if="bridgeStatus.installed" class="text-xs text-muted-foreground flex-1">{{ bridgeStatus.current_version }}</span>
           <Button v-if="!bridgeStatus.installed" size="sm" variant="outline" :disabled="busy('bridge') || loading.bridge" @click="handleDownloadBridge">
-            <span class="i-lucide-download mr-2 h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.jre.bridgeCard.actions.download') }}
+            <Download class="mr-2 h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.jre.bridgeCard.actions.download') }}
           </Button>
           <Button v-else size="sm" variant="ghost" :disabled="anyBusy" :aria-label="t('pages.settings.jre.bridgeCard.actions.remove')" :title="t('pages.settings.jre.bridgeCard.actions.remove')" @click="handleRemoveBridge">
-            <span class="i-lucide-trash-2 h-4 w-4" aria-hidden="true" />
+            <Trash2 class="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
         <SettingsFeedback v-bind="downloadFeedback('bridge')" />
@@ -296,13 +297,13 @@ onMounted(() => {
               </Badge>
               <div class="flex gap-1 items-center">
                 <Button v-if="driver.installed" size="sm" variant="ghost" :disabled="busy(driver.db_type) || loading.drivers" :aria-label="`${driver.name}: ${t('pages.settings.jre.driversCard.actions.checkUpdates')}`" :title="t('pages.settings.jre.driversCard.actions.checkUpdates')" @click="handleCheckDriverUpdates(driver.db_type)">
-                  <span class="i-lucide-refresh-cw h-4 w-4" aria-hidden="true" />
+                  <RefreshCw class="h-4 w-4" aria-hidden="true" />
                 </Button>
                 <Button v-if="!driver.installed" size="sm" variant="ghost" :disabled="busy(driver.db_type) || loading.drivers || !bridgeStatus?.installed || busy('bridge')" :title="!bridgeStatus?.installed ? t('pages.settings.jre.driversCard.notifications.installBridgeFirst') : undefined" :aria-label="`${driver.name}: ${t('pages.settings.jre.driversCard.actions.download')}`" @click="handleDownloadDriver(driver.db_type)">
-                  <span class="i-lucide-download mr-2 h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.jre.driversCard.actions.download') }}
+                  <Download class="mr-2 h-3.5 w-3.5" aria-hidden="true" />{{ t('pages.settings.jre.driversCard.actions.download') }}
                 </Button>
                 <Button v-else size="sm" variant="ghost" :disabled="busy(driver.db_type) || loading.drivers" :aria-label="`${driver.name}: ${t('pages.settings.jre.driversCard.actions.remove')}`" :title="t('pages.settings.jre.driversCard.actions.remove')" @click="handleRemoveDriver(driver.db_type)">
-                  <span class="i-lucide-trash-2 h-4 w-4" aria-hidden="true" />
+                  <Trash2 class="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
             </div>

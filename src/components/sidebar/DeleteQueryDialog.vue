@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Calendar, Database, Trash2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import {
   AlertDialog,
@@ -33,18 +34,18 @@ const { t } = useI18n()
     <AlertDialogContent>
       <AlertDialogHeader>
         <AlertDialogTitle class="flex gap-2 items-center">
-          <span class="i-carbon-trash-can text-destructive-text h-4 w-4" />
+          <Trash2 class="text-destructive-text h-4 w-4" />
           {{ t('sidebar.savedQueries.delete.title') }}
         </AlertDialogTitle>
         <AlertDialogDescription>
           {{ t('sidebar.savedQueries.delete.description', { name: queryName }) }}
           <div v-if="targetConnection || createdAt" class="text-xs text-muted-foreground mt-3 space-y-1">
             <div v-if="targetConnection" class="flex gap-1.5 items-center">
-              <span class="i-carbon-data-base h-3 w-3" />
+              <Database class="h-3 w-3" />
               <span>{{ t('sidebar.savedQueries.delete.target') }}: {{ targetConnection }}</span>
             </div>
             <div v-if="createdAt" class="flex gap-1.5 items-center">
-              <span class="i-carbon-calendar h-3 w-3" />
+              <Calendar class="h-3 w-3" />
               <span>{{ t('sidebar.savedQueries.delete.created') }}: {{ createdAt }}</span>
             </div>
           </div>

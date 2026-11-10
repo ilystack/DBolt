@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Activity, AlertTriangle, AlignLeft, Download, FileText, LineChart, Play } from 'lucide-vue-next'
 import type { StatementToExecute } from '@/composables/useSqlStatements'
 import type { TableInfo } from '@/store/databaseStore'
 import type { ApiResponse } from '@/types/api'
@@ -1208,7 +1209,7 @@ function closeResultPanel() {
             class="flex flex-1 items-center justify-center"
           >
             <div class="text-muted-foreground text-center">
-              <span class="i-carbon-warning mx-auto mb-2 h-8 w-8 block" />
+              <AlertTriangle class="mx-auto mb-2 h-8 w-8 block" />
               <p class="text-sm">
                 {{ t('pages.queries.status.connectionLost') }}
               </p>
@@ -1259,7 +1260,7 @@ function closeResultPanel() {
                       :aria-label="t('pages.queries.editor.execute')"
                       @click="executeQuery"
                     >
-                      <span class="i-lucide-play shrink-0 h-3.5 w-3.5" />
+                      <Play class="shrink-0 h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -1280,7 +1281,7 @@ function closeResultPanel() {
                       :aria-label="t('pages.queries.editor.explain')"
                       @click="handleExplainQuery(explainAnalyzeMode)"
                     >
-                      <span class="i-lucide-line-chart shrink-0 h-3.5 w-3.5" />
+                      <LineChart class="shrink-0 h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -1301,7 +1302,7 @@ function closeResultPanel() {
                       :aria-label="t('pages.queries.explain.analyzeToggle', { mode: explainAnalyzeMode ? 'ON' : 'OFF' })"
                       @click="toggleExplainMode"
                     >
-                      <span class="i-lucide-activity shrink-0 h-3.5 w-3.5" />
+                      <Activity class="shrink-0 h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -1323,7 +1324,7 @@ function closeResultPanel() {
                       :aria-label="t('pages.queries.editor.format')"
                       @click="handleToolbarFormat"
                     >
-                      <span class="i-lucide-align-left shrink-0 h-3.5 w-3.5" />
+                      <AlignLeft class="shrink-0 h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -1346,7 +1347,7 @@ function closeResultPanel() {
                       :aria-label="t('pages.queries.shortcuts.saveAs')"
                       @click="handleDownloadQuery"
                     >
-                      <span class="i-lucide-download shrink-0 h-3.5 w-3.5" />
+                      <Download class="shrink-0 h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -1405,7 +1406,7 @@ function closeResultPanel() {
                   </div>
 
                   <!-- Welcome message -->
-                  <span class="i-carbon-document text-muted-foreground mx-auto mb-4 h-12 w-12 block" />
+                  <FileText class="text-muted-foreground mx-auto mb-4 h-12 w-12 block" />
                   <p class="text-muted-foreground mb-4">
                     {{ getConnectionId() ? t('pages.queries.landing.ready') : t('pages.queries.noTab') }}
                   </p>

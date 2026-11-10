@@ -1,5 +1,5 @@
 import { presetWind4 } from '@unocss/preset-wind4'
-import { defineConfig, presetIcons, transformerDirectives, transformerVariantGroup } from 'unocss'
+import { defineConfig, transformerDirectives, transformerVariantGroup } from 'unocss'
 import presetAnimations from 'unocss-preset-animations'
 
 export default defineConfig({
@@ -9,18 +9,6 @@ export default defineConfig({
         reset: true,
         theme: 'on-demand',
         property: true,
-      },
-    }),
-    presetIcons({
-      scale: 1.2,
-      collections: {
-        'carbon': () => import('@iconify-json/carbon/icons.json').then(i => i.default as Record<string, unknown>),
-        'lucide': () => import('@iconify-json/lucide/icons.json').then(i => i.default as Record<string, unknown>),
-        'simple-icons': () => import('@iconify-json/simple-icons/icons.json').then(i => i.default as Record<string, unknown>),
-        'ant-design': async () => {
-          const { readFileSync } = await import('node:fs')
-          return JSON.parse(readFileSync(new URL('./node_modules/@iconify/json/json/ant-design.json', import.meta.url), 'utf-8'))
-        },
       },
     }),
     presetAnimations(),

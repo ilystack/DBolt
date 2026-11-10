@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AlertTriangle } from 'lucide-vue-next'
 import type { AgentToolCall } from '@/store/dataStudioStore'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
@@ -36,7 +37,7 @@ function riskColor(risk: string): string {
     :class="riskColor(props.toolCall.riskLevel)"
   >
     <div class="mb-2 flex gap-2 items-center">
-      <span class="i-carbon-warning shrink-0 h-4 w-4" />
+      <AlertTriangle class="shrink-0 h-4 w-4" />
       <span class="text-xs font-semibold">{{ riskLabel(props.toolCall.riskLevel) }}</span>
     </div>
     <div class="text-xs font-mono mb-1">

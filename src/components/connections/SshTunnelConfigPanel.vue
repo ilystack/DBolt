@@ -3,7 +3,7 @@ import type { SSHTunnelConfig } from '@/store/connectionStore'
 import type { SshProfile } from '@/store/sshProfileStore'
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { Pencil, Plus } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, Globe, GripVertical, Lock, Pencil, Plus, Unlink } from 'lucide-vue-next'
 import Sortable from 'sortablejs'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -299,7 +299,7 @@ onMounted(detectProxy)
 
     <template v-else>
       <div class="flex gap-2 items-center">
-        <span class="i-carbon-locked text-green-500 shrink-0 h-4 w-4" />
+        <Lock class="text-green-500 shrink-0 h-4 w-4" />
         <span class="text-sm font-medium whitespace-nowrap">{{ t('components.serverForm.ssh.useSshTunnel') }}</span>
         <span v-if="hopProfiles.length > 0" class="text-xs text-muted-foreground whitespace-nowrap">
           {{ hopProfiles.length }} {{ t('components.serverForm.ssh.hops', hopProfiles.length) }}
@@ -317,8 +317,8 @@ onMounted(detectProxy)
             : t('components.serverForm.ssh.testChain')"
           @click="testFirstHop"
         >
-          <span v-if="testing" class="i-carbon-circle-dash text-blue-500 h-3.5 w-3.5 animate-spin" />
-          <span v-else class="i-carbon-network-3 h-3.5 w-3.5" />
+          <Loader2 v-if="testing" class="text-blue-500 h-3.5 w-3.5 animate-spin" />
+          <Share2 v-else class="h-3.5 w-3.5" />
         </Button>
 
         <div class="ml-auto max-w-[320px] min-w-0 w-[280px]">
@@ -395,7 +395,7 @@ onMounted(detectProxy)
           :title="t('components.serverForm.ssh.systemProxyDetach')"
           @click="patch({ useSystemProxy: false })"
         >
-          <span class="i-carbon-unlink h-3 w-3" />
+          <Unlink class="h-3 w-3" />
         </Button>
       </div>
       <!-- Persisted-but-undetected: the setting pools invisibly otherwise —
@@ -422,7 +422,7 @@ onMounted(detectProxy)
           :title="t('components.serverForm.ssh.systemProxyDetach')"
           @click="patch({ useSystemProxy: false })"
         >
-          <span class="i-carbon-unlink h-3 w-3" />
+          <Unlink class="h-3 w-3" />
         </Button>
       </div>
 
@@ -430,7 +430,7 @@ onMounted(detectProxy)
         v-else-if="detectedProxy"
         class="px-2.5 py-1.5 border rounded-md flex gap-2 items-center"
       >
-        <span class="i-carbon-network-public text-muted-foreground shrink-0 h-3.5 w-3.5" />
+        <Globe class="text-muted-foreground shrink-0 h-3.5 w-3.5" />
         <span class="text-xs text-muted-foreground flex-1 min-w-0 truncate">
           {{ t('components.serverForm.ssh.systemProxyDetected', { url: detectedProxy }) }}
         </span>
@@ -452,7 +452,7 @@ onMounted(detectProxy)
             :key="profile.id"
             class="px-2.5 py-1.5 border rounded-md bg-background flex gap-2 items-center"
           >
-            <span class="ssh-hop-handle i-carbon-draggable text-muted-foreground shrink-0 h-3.5 w-3.5 cursor-grab" />
+            <GripVertical class="ssh-hop-handle text-muted-foreground shrink-0 h-3.5 w-3.5 cursor-grab" />
             <span class="text-caption text-muted-foreground font-bold w-4">{{ index + 1 }}</span>
             <div class="flex-1 min-w-0">
               <div class="text-sm font-medium truncate">
@@ -464,10 +464,10 @@ onMounted(detectProxy)
             </div>
             <template v-if="hopProfiles.length > 1">
               <Button variant="ghost" size="icon" type="button" class="shrink-0 h-6 w-6" :disabled="index === 0" :aria-label="t('components.serverForm.ssh.moveUp')" :title="t('components.serverForm.ssh.moveUp')" @click="moveHop(index, index - 1)">
-                <span class="i-carbon-chevron-up h-3.5 w-3.5" />
+                <ChevronUp class="h-3.5 w-3.5" />
               </Button>
               <Button variant="ghost" size="icon" type="button" class="shrink-0 h-6 w-6" :disabled="index === hopProfiles.length - 1" :aria-label="t('components.serverForm.ssh.moveDown')" :title="t('components.serverForm.ssh.moveDown')" @click="moveHop(index, index + 1)">
-                <span class="i-carbon-chevron-down h-3.5 w-3.5" />
+                <ChevronDown class="h-3.5 w-3.5" />
               </Button>
             </template>
             <Button variant="ghost" size="icon" type="button" class="h-6 w-6" :title="t('components.serverForm.ssh.editProfile')" @click="openEditProfile(profile)">
@@ -481,7 +481,7 @@ onMounted(detectProxy)
               :title="t('components.serverForm.ssh.detachAction')"
               @click="detachHop(index)"
             >
-              <span class="i-carbon-unlink h-3.5 w-3.5" />
+              <Unlink class="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
@@ -502,7 +502,7 @@ onMounted(detectProxy)
             <Pencil class="h-3.5 w-3.5" />
           </Button>
           <Button variant="ghost" size="icon" type="button" class="text-muted-foreground shrink-0 h-6 w-6 hover:text-destructive-text" :disabled="converting" :aria-label="t('components.serverForm.ssh.detachAction')" :title="t('components.serverForm.ssh.detachAction')" @click="detachLegacy">
-            <span class="i-carbon-unlink h-3.5 w-3.5" />
+            <Unlink class="h-3.5 w-3.5" />
           </Button>
         </div>
         <div class="flex flex-wrap gap-2 items-center justify-between">
@@ -510,7 +510,7 @@ onMounted(detectProxy)
             {{ t('components.serverForm.ssh.convertHint') }}
           </p>
           <Button variant="outline" type="button" size="sm" :disabled="converting" @click="convertLegacyToProfile">
-            <span v-if="converting" class="i-carbon-circle-dash h-3.5 w-3.5 animate-spin" />
+            <Loader2 v-if="converting" class="h-3.5 w-3.5 animate-spin" />
             {{ t('components.serverForm.ssh.convertToProfile') }}
           </Button>
         </div>

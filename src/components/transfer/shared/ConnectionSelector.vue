@@ -193,7 +193,7 @@ const shouldShowSchema = computed(() => {
   <div class="space-y-3">
     <!-- No connections message -->
     <div v-if="allConnections.length === 0" class="p-6 text-center border rounded-md border-dashed bg-muted/20 flex flex-col items-center justify-center">
-      <span class="i-carbon-api-1 text-muted-foreground mb-2 opacity-50 h-6 w-6" />
+      <Webhook class="text-muted-foreground mb-2 opacity-50 h-6 w-6" />
       <p class="text-xs text-muted-foreground font-medium">
         {{ t('transfer.connection.noConnections') }}
       </p>
@@ -279,7 +279,7 @@ const shouldShowSchema = computed(() => {
           </SelectContent>
         </Select>
         <div v-if="loadingDatabases" class="text-caption text-muted-foreground flex items-center">
-          <span class="i-carbon-circle-dash mr-1 animate-spin" /> {{ t('transfer.connection.loadingDatabases') }}
+          <Loader2 class="mr-1 h-3.5 w-3.5 animate-spin" /> {{ t('transfer.connection.loadingDatabases') }}
         </div>
       </div>
 
@@ -304,7 +304,7 @@ const shouldShowSchema = computed(() => {
           </SelectContent>
         </Select>
         <div v-if="loadingSchemas" class="text-caption text-muted-foreground flex items-center">
-          <span class="i-carbon-circle-dash mr-1 animate-spin" /> {{ t('transfer.connection.loadingSchemas') }}
+          <Loader2 class="mr-1 h-3.5 w-3.5 animate-spin" /> {{ t('transfer.connection.loadingSchemas') }}
         </div>
       </div>
     </div>

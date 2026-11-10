@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AiAction, AiPermissions } from '@/common'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { ChevronRight } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AI_ACTIONS, aiPreset, getAiPolicy, resolveAiPermissions, UPGRADE_URL } from '@/common'
@@ -94,7 +95,7 @@ const selectPreset = (value: string) => {
   <details v-else :open="expanded" class="group border border-border rounded-lg" @toggle="expanded = ($event.target as HTMLDetailsElement).open">
     <summary class="text-sm font-medium p-3 list-none rounded-lg flex gap-2 cursor-pointer items-center justify-between focus-visible:outline-none [&::-webkit-details-marker]:hidden focus-visible:ring-2 focus-visible:ring-ring">
       <span class="flex gap-2 items-center">
-        <span aria-hidden="true" class="i-lucide-chevron-right text-muted-foreground shrink-0 h-4 w-4 group-open:rotate-90" />
+        <ChevronRight aria-hidden="true" class="text-muted-foreground shrink-0 h-4 w-4 group-open:rotate-90 transition-transform" />
         {{ t('aiPermissions.title') }}
       </span>
       <span class="text-xs text-muted-foreground font-normal text-right" role="status">
