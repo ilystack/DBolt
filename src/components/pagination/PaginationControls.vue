@@ -89,7 +89,11 @@ const applyCustomSize = () => {
             :aria-label="`${t('components.pagination.rowsPerPage')}: ${pageSizeLabel}`"
           >
             {{ pageSizeLabel }}
-            <span class="i-lucide-chevron-down ml-1 h-3 w-3" aria-hidden="true" />
+            <span
+              class="i-lucide-chevron-down ml-1 h-3 w-3 transition-transform duration-200"
+              :class="{ 'rotate-180': sizeMenuOpen }"
+              aria-hidden="true"
+            />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" class="w-56">

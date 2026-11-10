@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CopyFormat } from '@/types/grid'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Button } from '@/components/ui/button'
 import {
@@ -22,6 +23,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const exportMenuOpen = ref(false)
 </script>
 
 <template>
@@ -34,11 +36,14 @@ const { t } = useI18n()
         {{ t('components.dataGrid.selection.selected', { count: selectedCount }) }}
       </span>
       <div class="ml-auto flex gap-2">
-        <DropdownMenu>
+        <DropdownMenu v-model:open="exportMenuOpen">
           <DropdownMenuTrigger as-child>
             <Button variant="outline" size="sm">
               {{ t('components.dataGrid.selection.exportSelected') }}
-              <span class="i-carbon-chevron-down ml-1 h-3 w-3" />
+              <span
+                class="i-carbon-chevron-down ml-1 h-3 w-3 transition-transform duration-200"
+                :class="{ 'rotate-180': exportMenuOpen }"
+              />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

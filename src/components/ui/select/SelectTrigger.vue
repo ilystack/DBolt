@@ -33,7 +33,7 @@ const delegatedProps = computed(() => {
         stroke-width="2"
         stroke-linecap="round"
         stroke-linejoin="round"
-        class="opacity-50 h-4 w-4"
+        class="opacity-50 h-4 w-4 transition-transform duration-200 [[data-state=open]>&]:rotate-180"
       >
         <path d="m6 9 6 6 6-6" />
       </svg>

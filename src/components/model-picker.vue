@@ -88,7 +88,10 @@ function selectModel(value: string) {
     <PopoverTrigger as-child>
       <button :class="triggerClasses">
         <span class="text-left truncate">{{ selectedLabel }}</span>
-        <span class="i-carbon-chevron-down text-muted-foreground ml-1 shrink-0 h-3 w-3" />
+        <span
+          class="i-carbon-chevron-down text-muted-foreground ml-1 shrink-0 h-3 w-3 transition-transform duration-200"
+          :class="{ 'rotate-180': open }"
+        />
       </button>
     </PopoverTrigger>
     <PopoverContent align="start" side="top" :side-offset="6" :collision-padding="8" :class="panelClasses">
