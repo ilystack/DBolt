@@ -12,7 +12,6 @@ import {
   FileCode,
   Play,
   RefreshCw,
-  Sparkles,
   Wand2,
 } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
@@ -77,6 +76,36 @@ const selectedModelLabel = computed(() => {
   const allModels = modelGroups.value.flatMap(g => g.models)
   const active = allModels.find(m => m.id === selectedModelId.value)
   return active?.label || activeModelLabel.value || 'Select Model'
+})
+
+const generateButtonText = computed(() => {
+  if (!isGeneratingAi.value)
+    return 'Generate Now'
+  switch (aiStep.value) {
+    case 'analyzing':
+      return 'Analyzing Schema...'
+    case 'prompting':
+      return 'Synthesizing Data...'
+    case 'parsing':
+      return 'Formatting Records...'
+    default:
+      return 'Synthesizing...'
+  }
+})
+
+const regenerateButtonText = computed(() => {
+  if (!isGeneratingAi.value)
+    return 'Regenerate'
+  switch (aiStep.value) {
+    case 'analyzing':
+      return 'Analyzing Schema...'
+    case 'prompting':
+      return 'Synthesizing Data...'
+    case 'parsing':
+      return 'Formatting Records...'
+    default:
+      return 'Regenerating...'
+  }
 })
 
 async function syncModels() {
@@ -506,7 +535,7 @@ async function insertDirectly() {
           <span
             class="text-[10px] text-primary font-medium font-sans px-1.5 py-0.2 rounded bg-primary/15"
           >
-            AI Active ({{ aiRows.length }})
+            AI ({{ aiRows.length }})
           </span>
         </button>
 
@@ -518,6 +547,11 @@ async function insertDirectly() {
         >
           <FileCode class="h-3.5 w-3.5" />
           <span>Generated SQL Script</span>
+          <span
+            class="text-[10px] text-primary font-medium font-sans px-1.5 py-0.2 rounded bg-primary/15"
+          >
+            AI
+          </span>
         </button>
       </div>
 
@@ -673,7 +707,6 @@ async function insertDirectly() {
                 v-if="aiRows"
                 class="text-[11px] text-primary font-medium px-2 py-0.5 border border-primary/20 rounded bg-primary/10 flex gap-1 items-center"
               >
-                <Sparkles class="h-3 w-3" />
                 AI Synthesized ({{ aiRows.length }} rows)
               </span>
             </div>
@@ -741,8 +774,7 @@ async function insertDirectly() {
       <div class="px-5 py-3 border-t bg-muted/20 flex shrink-0 items-center justify-between gap-4">
         <!-- FOOTER KIRI: Model Picker -->
         <div class="flex items-center gap-2">
-          <span class="text-xs text-muted-foreground flex items-center gap-1 font-medium">
-            <Sparkles class="h-3.5 w-3.5 text-primary" />
+          <span class="text-xs text-muted-foreground font-medium">
             <span>Model:</span>
           </span>
 
@@ -798,8 +830,8 @@ async function insertDirectly() {
             @click="generateWithAi"
           >
             <Spinner v-if="isGeneratingAi" size="sm" class="h-3.5 w-3.5" />
-            <Sparkles v-else class="h-3.5 w-3.5" />
-            <span>{{ isGeneratingAi ? 'Synthesizing...' : 'Generate Now' }}</span>
+            <Play v-else class="h-3.5 w-3.5" />
+            <span>{{ generateButtonText }}</span>
           </Button>
 
           <Button
@@ -821,8 +853,9 @@ async function insertDirectly() {
             :disabled="isGeneratingAi"
             @click="generateWithAi"
           >
-            <RefreshCw class="h-3 w-3" />
-            <span>Regenerate</span>
+            <Spinner v-if="isGeneratingAi" size="sm" class="h-3 w-3" />
+            <RefreshCw v-else class="h-3 w-3" />
+            <span>{{ regenerateButtonText }}</span>
           </Button>
 
           <Button
