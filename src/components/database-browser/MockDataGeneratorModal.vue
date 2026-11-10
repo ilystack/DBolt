@@ -162,14 +162,16 @@ async function loadTableColumns() {
       tableName: props.tableName,
     })
 
-    columns.value = rawCols.map(c => ({
-      name: c.name,
-      dataType: c.data_type,
-      nullable: c.nullable,
-      isPrimaryKey: c.is_primary_key,
-      isAutoIncrement: c.is_auto_increment,
-      included: false,
-    }))
+    columns.value = rawCols
+      .filter(c => !c.is_auto_increment)
+      .map(c => ({
+        name: c.name,
+        dataType: c.data_type,
+        nullable: c.nullable,
+        isPrimaryKey: c.is_primary_key,
+        isAutoIncrement: c.is_auto_increment,
+        included: false,
+      }))
   }
   catch (err) {
     console.error('Failed to load table columns:', err)
@@ -629,12 +631,6 @@ async function insertDirectly() {
                         class="text-[10px] text-amber-600 font-sans font-semibold px-1.5 py-0.2 rounded bg-amber-500/15 dark:text-amber-400"
                       >
                         PK
-                      </span>
-                      <span
-                        v-if="col.isAutoIncrement"
-                        class="text-[10px] text-blue-600 font-sans px-1.5 py-0.2 rounded bg-blue-500/15 dark:text-blue-400"
-                      >
-                        AUTO
                       </span>
                     </div>
                   </td>
